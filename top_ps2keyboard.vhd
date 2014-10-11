@@ -44,7 +44,7 @@ end top_ps2keyboard;
 
 architecture Behavioral of top_ps2keyboard is
 
-	COMPONENT PS2INTERFACE
+	COMPONENT ps2interface
 	PORT (
 		ps2_clk  : inout std_logic;
 		ps2_data : inout std_logic;
@@ -59,6 +59,14 @@ architecture Behavioral of top_ps2keyboard is
 		read     : out std_logic;
 		busy     : out std_logic;
 		err      : out std_logic);
+	END COMPONENT;
+
+	COMPONENT ps2_keyboard_decode is
+   PORT ( CLK_IN 				: in  STD_LOGIC;
+           KEYCODE_IN 		: in  STD_LOGIC_VECTOR (7 downto 0);
+           KEY_WR_IN 		: in  STD_LOGIC;
+           ASCII_KEY_OUT 	: out  STD_LOGIC_VECTOR (7 downto 0);
+           ACII_KEY_WR_OUT : out  STD_LOGIC);
 	END COMPONENT;
 	
 	COMPONENT sseg
@@ -89,6 +97,23 @@ architecture Behavioral of top_ps2keyboard is
 		 vsync       : out std_logic);   
 	END COMPONENT;
 
+	COMPONENT TDP_RAM
+		Generic (G_DATA_A_SIZE 	:natural :=32;
+					G_ADDR_A_SIZE	:natural :=9;
+					G_RELATION		:natural :=3;
+					G_INIT_FILE		:string :="");--log2(SIZE_A/SIZE_B)
+		Port ( CLK_A_IN 	: in  STD_LOGIC;
+				 WE_A_IN 	: in  STD_LOGIC;
+				 ADDR_A_IN 	: in  STD_LOGIC_VECTOR (G_ADDR_A_SIZE-1 downto 0);
+				 DATA_A_IN	: in  STD_LOGIC_VECTOR (G_DATA_A_SIZE-1 downto 0);
+				 DATA_A_OUT	: out  STD_LOGIC_VECTOR (G_DATA_A_SIZE-1 downto 0);
+				 CLK_B_IN 	: in  STD_LOGIC;
+				 WE_B_IN 	: in  STD_LOGIC;
+				 ADDR_B_IN 	: in  STD_LOGIC_VECTOR (G_ADDR_A_SIZE+G_RELATION-1 downto 0);
+				 DATA_B_IN 	: in  STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0);
+				 DATA_B_OUT : out STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0));
+	END COMPONENT;
+
 	COMPONENT blk_mem_gen_v7_2
 	  PORT (
 		 clka : IN STD_LOGIC;
@@ -99,15 +124,23 @@ architecture Behavioral of top_ps2keyboard is
 	  );
 	END COMPONENT;
 
+subtype slv is std_logic_vector;
+
 signal clk_25MHz, clk_50mhz : std_logic;
 signal clk_1x, clk_1x_bufg :std_logic:='0';
 signal clk0_2xout_tmp, clk0_2xout_bufg, clk0_div2out, clk0_div2out_bufg :std_logic:='0';
 
-signal r, g, b 		: std_logic := '0';
-signal font_addr		: std_logic_vector(11 downto 0);
-signal font_data		: std_logic_vector(7 downto 0);
+signal r, g, b 					: std_logic := '0';
+signal octl							: std_logic_vector(7 downto 0);
+signal char_addr, font_addr	: std_logic_vector(11 downto 0);
+signal char_data, font_data	: std_logic_vector(7 downto 0);
+signal char_buf_wr 		: std_logic := '0';
+signal char_buf_wr_addr : unsigned(11 downto 0) := (others => '0');
+signal char_buf_wr_data : std_logic_vector(7 downto 0) := (others => '0');
+signal ocrx, ocry : unsigned(7 downto 0) := (others => '0');
 
 signal keyboard_data : std_logic_vector(15 downto 0) := (others => '0');
+signal keyboard_rd : std_logic := '0';
 
 signal sseg_data : std_logic_vector(15 downto 0) := (others => '0');
 
@@ -127,11 +160,11 @@ begin
 		write    => '0',
 
 		rx_data  => keyboard_data(7 downto 0),
-		read     => open,
+		read     => keyboard_rd,
 		busy     => open,
 		err      => open);
 	
-	sseg_data <= "0000" & font_addr;
+	sseg_data <= keyboard_data;
 	
 	sseg_inst : sseg
 	PORT MAP (	
@@ -190,19 +223,36 @@ begin
 	vgaRed <= r&r&r;
 	vgaGreen <= g&g&g;
 	vgaBlue <= b&b;
-		
+	octl <= "11100" & SW_IN(2 downto 0);
+	
+	process(clk_25MHz)
+	begin
+		if rising_edge(clk_25MHz) then
+			if char_buf_wr = '1' then
+				if ocrx = X"4F" then
+					ocrx <= X"00";
+				else
+					ocrx <= ocrx + 1;
+				end if;
+				if ocrx = X"4F" then
+					ocry <= ocry + 1;
+				end if;
+			end if;
+		end if;
+	end process;
+	
 	vga80x40_inst : vga80x40
 	PORT MAP (	
 		 reset       =>  '0',
 		 clk25MHz    => clk_25MHz,
-		 TEXT_A      => open,
-		 TEXT_D      => keyboard_data(7 downto 0),
+		 TEXT_A      => char_addr,
+		 TEXT_D      => char_data,
 		 FONT_A      => font_addr,
 		 FONT_D      => font_data,
 		 --
-		 ocrx        => X"10",
-		 ocry        => X"10",
-		 octl        => "11100010",
+		 ocrx        => slv(ocrx),
+		 ocry        => slv(ocry),
+		 octl        => octl,
 		 --
 		 R           => r,
 		 G           => g,
@@ -218,5 +268,37 @@ begin
 		 dina 	=> (others => '0'),
 		 douta 	=> font_data);
 		 
+	process(clk_25MHz)
+	begin
+		if rising_edge(clk_25MHz) then
+			if char_buf_wr = '1' then
+				char_buf_wr_addr <= char_buf_wr_addr + 1;
+			end if;
+		end if;
+	end process;
+
+	ps2_keyboard_decode_inst : ps2_keyboard_decode
+   PORT MAP ( 	CLK_IN 				=> clk_25MHz,
+					KEYCODE_IN 			=> keyboard_data(7 downto 0),
+					KEY_WR_IN 			=> keyboard_rd,
+					ASCII_KEY_OUT 		=> char_buf_wr_data,
+					ACII_KEY_WR_OUT 	=> char_buf_wr);
+
+	char_buf : TDP_RAM
+	Generic Map ( G_DATA_A_SIZE 	=> char_data'length,
+					  G_ADDR_A_SIZE	=> char_addr'length,
+					  G_RELATION		=> 0, --log2(SIZE_A/SIZE_B)
+					  G_INIT_FILE		=> "ascii_space.coe")
+   Port Map ( CLK_A_IN 	=> clk_25MHz,
+				  WE_A_IN 	=> '0',
+				  ADDR_A_IN => char_addr,
+				  DATA_A_IN	=> X"00",
+				  DATA_A_OUT		=> char_data,
+				  CLK_B_IN 		=> clk_25MHz,
+				  WE_B_IN 		=> char_buf_wr,
+				  ADDR_B_IN 		=> slv(char_buf_wr_addr),
+				  DATA_B_IN 		=> char_buf_wr_data,
+				  DATA_B_OUT 	=> open);
+
 end Behavioral;
 

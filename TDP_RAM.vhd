@@ -82,18 +82,19 @@ begin
 
 process(CLK_A_IN)  begin
 	if rising_edge(CLK_A_IN)  then
-		for I in 0 to 2**G_RELATION-1 loop
-			DATA_A_OUT(G_DATA_A_SIZE/(2**G_RELATION)*(I+1)-1 downto G_DATA_A_SIZE/(2**G_RELATION)*(I)) <= memory(to_integer(unsigned(ADDR_A_IN) & to_unsigned(I,G_RELATION)));
+		if G_RELATION = 0 then
 			if WE_A_IN = '1'  then
-				memory(to_integer(unsigned(ADDR_A_IN) & to_unsigned(I,G_RELATION))) := DATA_A_IN(G_DATA_A_SIZE/(2**G_RELATION)*(I+1)-1 downto G_DATA_A_SIZE/(2**G_RELATION)*(I));
+				memory(to_integer(unsigned(ADDR_A_IN))) := DATA_A_IN;
 			end if;	
-		end loop;
---		DATA_A_OUT(G_DATA_A_SIZE/2-1 downto 0) <= memory(to_integer(unsigned(ADDR_A_IN & '0')));
---		DATA_A_OUT(G_DATA_A_SIZE-1 downto G_DATA_A_SIZE/2) <= memory(to_integer(unsigned(ADDR_A_IN & '1')));
---		if WE_A_IN = '1'  then
---			memory(to_integer(unsigned(ADDR_A_IN & '0'))) := DATA_A_IN(G_DATA_A_SIZE/2-1 downto 0);
---			memory(to_integer(unsigned(ADDR_A_IN & '1'))) := DATA_A_IN(G_DATA_A_SIZE-1 downto G_DATA_A_SIZE/2);
---		end if;	
+			DATA_A_OUT <= memory(to_integer(unsigned(ADDR_A_IN)));
+		else
+			for I in 0 to 2**G_RELATION-1 loop
+				DATA_A_OUT(G_DATA_A_SIZE/(2**G_RELATION)*(I+1)-1 downto G_DATA_A_SIZE/(2**G_RELATION)*(I)) <= memory(to_integer(unsigned(ADDR_A_IN) & to_unsigned(I,G_RELATION)));
+				if WE_A_IN = '1'  then
+					memory(to_integer(unsigned(ADDR_A_IN) & to_unsigned(I,G_RELATION))) := DATA_A_IN(G_DATA_A_SIZE/(2**G_RELATION)*(I+1)-1 downto G_DATA_A_SIZE/(2**G_RELATION)*(I));
+				end if;	
+			end loop;
+		end if;	
 	end if;	
 end process;
 
