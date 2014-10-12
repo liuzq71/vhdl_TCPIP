@@ -39,24 +39,32 @@ end ps2_keyboard_decode;
 
 architecture Behavioral of ps2_keyboard_decode is
 
-signal ignore_next_key, handle_keycode : std_logic := '0';
-signal keycode_cache : std_logic_vector(7 downto 0);
+	COMPONENT ps2_to_ascii
+	PORT (
+		 clka 	: IN STD_LOGIC;
+		 wea 		: IN STD_LOGIC_VECTOR(0 DOWNTO 0);
+		 addra 	: IN STD_LOGIC_VECTOR(7 DOWNTO 0);
+		 dina 	: IN STD_LOGIC_VECTOR(7 DOWNTO 0);
+		 douta 	: OUT STD_LOGIC_VECTOR(7 DOWNTO 0));
+	END COMPONENT;
+
+constant C_shift_key_left	: std_logic_vector(7 downto 0) := X"12";
+constant C_shift_key_right	: std_logic_vector(7 downto 0) := X"59";
+constant C_caps_lock_key 	: std_logic_vector(7 downto 0) := X"58";
+
+signal key_released, handle_keycode, shift_pressed, handle_keypressed : std_logic := '0';
+signal keycode_cache, ps2toascii_addr, ascii_key : std_logic_vector(7 downto 0);
 
 begin
+
+	ASCII_KEY_OUT <= ascii_key;
 
 	process(CLK_IN)
 	begin
 		if rising_edge(CLK_IN) then
 			if KEY_WR_IN = '1' then
-				if KEYCODE_IN = X"F0" then
-					ignore_next_key <= '1';
-				else
-					ignore_next_key <= '0';
-				end if;
-			end if;
-			if KEY_WR_IN = '1' then
 				keycode_cache <= KEYCODE_IN;
-				if ignore_next_key = '0' and KEYCODE_IN /= X"F0" then
+				if KEYCODE_IN /= X"E0" then
 					handle_keycode <= '1';
 				end if;
 			else
@@ -64,12 +72,49 @@ begin
 			end if;
 		end if;
 	end process;
+
+	ps2toascii_addr <= shift_pressed & keycode_cache(6 downto 0);
+
+	ps2_to_ascii_inst : ps2_to_ascii
+	PORT MAP (
+		 clka 	=> CLK_IN,
+		 wea 		=> "0",
+		 addra 	=> ps2toascii_addr,
+		 dina 	=> (others => '0'),
+		 douta 	=> ascii_key);
+
+	process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			if handle_keycode = '1' then
+				if KEYCODE_IN = X"F0" then
+					key_released <= '1';
+				else
+					key_released <= '0';
+				end if;
+			end if;
+			if handle_keycode = '1' and KEYCODE_IN /= X"F0" then
+				if key_released = '1' then
+					if keycode_cache = C_shift_key_left or keycode_cache = C_shift_key_right then
+						shift_pressed <= '0';
+					end if;
+				else
+					if keycode_cache = C_shift_key_left or keycode_cache = C_shift_key_right then
+						shift_pressed <= '1';
+					else
+						handle_keypressed <= '1';
+					end if;
+				end if;
+			else
+				handle_keypressed <= '0';
+			end if;
+		end if;
+	end process;
 	
 	process(CLK_IN)
 	begin
 		if rising_edge(CLK_IN) then
-			ASCII_KEY_OUT <= keycode_cache;
-			if handle_keycode = '1' then
+			if handle_keypressed = '1' and ascii_key /= X"00" then
 				ACII_KEY_WR_OUT <= '1';
 			else
 				ACII_KEY_WR_OUT <= '0';
