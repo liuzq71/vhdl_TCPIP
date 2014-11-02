@@ -159,8 +159,8 @@ NET "Hsync"       LOC = "T4";    # Bank = 2, Pin name = IO_L03N_2/MOSI/CSI_B, Ty
 NET "Vsync"       LOC = "U3";    # Bank = 2, Pin name = IO_L01P_2/CSO_B, Type = DUAL,                 Sch name = VSYNC
 
 ## PS/2 connector
-NET "PS2C_INOUT"        LOC = "R12";   # Bank = 2, Pin name = IO_L20N_2, Type = I/O,                        Sch name = PS2C
-NET "PS2D_INOUT"        LOC = "P11";   # Bank = 2, Pin name = IO_L18P_2, Type = I/O,                        Sch name = PS2D
+#NET "PS2C_INOUT"        LOC = "R12";   # Bank = 2, Pin name = IO_L20N_2, Type = I/O,                        Sch name = PS2C
+#NET "PS2D_INOUT"        LOC = "P11";   # Bank = 2, Pin name = IO_L18P_2, Type = I/O,                        Sch name = PS2D
 
 ## FX2 connector
 #NET "PIO<0>"      LOC = "B4";    # Bank = 0, Pin name = IO_L24N_0, Type = I/O,                        Sch name = R-IO1
@@ -206,14 +206,14 @@ NET "PS2D_INOUT"        LOC = "P11";   # Bank = 2, Pin name = IO_L18P_2, Type = 
 
 ## 12 pin connectors
 ##JA
-#NET "JA<0>"       LOC = "L15";   # Bank = 1, Pin name = IO_L09N_1/A11, Type = DUAL,                   Sch name = JA1
-#NET "JA<1>"       LOC = "K12";   # Bank = 1, Pin name = IO_L11N_1/A9/RHCLK1, Type = RHCLK/DUAL,       Sch name = JA2
-#NET "JA<2>"       LOC = "L17";   # Bank = 1, Pin name = IO_L10N_1/VREF_1, Type = VREF,                Sch name = JA3
-#NET "JA<3>"       LOC = "M15";   # Bank = 1, Pin name = IO_L07P_1, Type = I/O,                        Sch name = JA4
-#NET "JA<4>"       LOC = "K13";   # Bank = 1, Pin name = IO_L11P_1/A10/RHCLK0, Type = RHCLK/DUAL,      Sch name = JA7
-#NET "JA<5>"       LOC = "L16";   # Bank = 1, Pin name = IO_L09P_1/A12, Type = DUAL,                   Sch name = JA8
-#NET "JA<6>"       LOC = "M14";   # Bank = 1, Pin name = IO_L05P_1, Type = I/O,                        Sch name = JA9
-#NET "JA<7>"       LOC = "M16";   # Bank = 1, Pin name = IO_L07N_1, Type = I/O,                        Sch name = JA10
+#NET "JA<0>"      LOC = "L15";   # Bank = 1, Pin name = IO_L09N_1/A11, Type = DUAL,                   Sch name = JA1
+#NET "JA<1>"      LOC = "K12";   # Bank = 1, Pin name = IO_L11N_1/A9/RHCLK1, Type = RHCLK/DUAL,       Sch name = JA2
+#NET "SCLK"       LOC = "L17";   # Bank = 1, Pin name = IO_L10N_1/VREF_1, Type = VREF,                Sch name = JA3
+#NET "SDI"      	LOC = "M15";   # Bank = 1, Pin name = IO_L07P_1, Type = I/O,                        Sch name = JA4
+NET "RESET"       LOC = "K13";   # Bank = 1, Pin name = IO_L11P_1/A10/RHCLK0, Type = RHCLK/DUAL,      Sch name = JA7
+#NET "CS" 			LOC = "L16";   # Bank = 1, Pin name = IO_L09P_1/A12, Type = DUAL,                   Sch name = JA8
+#NET "JA<6>"      LOC = "M14";   # Bank = 1, Pin name = IO_L05P_1, Type = I/O,                        Sch name = JA9
+#NET "SDO"       	LOC = "M16";   # Bank = 1, Pin name = IO_L07N_1, Type = I/O,                        Sch name = JA10
 
 ##JB
 #NET "JB<0>"       LOC = "M13";   # Bank = 1, Pin name = IO_L05N_1/VREF_1, Type = VREF,                Sch name = JB1
@@ -222,8 +222,8 @@ NET "PS2D_INOUT"        LOC = "P11";   # Bank = 2, Pin name = IO_L18P_2, Type = 
 #NET "JB<3>"       LOC = "T17";   # Bank = 1, Pin name = IO_L01N_1/A15, Type = DUAL,                   Sch name = JB4
 #NET "JB<4>"       LOC = "P17";   # Bank = 1, Pin name = IO_L06P_1, Type = I/O,                        Sch name = JB7
 #NET "JB<5>"       LOC = "R16";   # Bank = 1, Pin name = IO_L03N_1/VREF_1, Type = VREF,                Sch name = JB8
-#NET "JB<6>"       LOC = "T18";   # Bank = 1, Pin name = IO_L02N_1/A13, Type = DUAL,                   Sch name = JB9
-#NET "JB<7>"       LOC = "U18";   # Bank = 1, Pin name = IO_L01P_1/A16, Type = DUAL,                   Sch name = JB10
+NET "RX_IN"        LOC = "T18";   # Bank = 1, Pin name = IO_L02N_1/A13, Type = DUAL,                   Sch name = JB9
+NET "TX_OUT"       LOC = "U18";   # Bank = 1, Pin name = IO_L01P_1/A16, Type = DUAL,                   Sch name = JB10
 
 ##JC
 #NET "JC<0>"       LOC = "G15";   # Bank = 1, Pin name = IO_L18P_1, Type = I/O,                        Sch name = JC1

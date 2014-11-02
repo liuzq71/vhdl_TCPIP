@@ -30,11 +30,12 @@ use IEEE.STD_LOGIC_1164.ALL;
 --use UNISIM.VComponents.all;
 
 entity ps2_keyboard_decode is
-    Port ( CLK_IN 			: in  STD_LOGIC;
-           KEYCODE_IN 		: in  STD_LOGIC_VECTOR (7 downto 0);
-           KEY_WR_IN 		: in  STD_LOGIC;
-           ASCII_KEY_OUT 	: out  STD_LOGIC_VECTOR (7 downto 0);
-           ACII_KEY_WR_OUT : out  STD_LOGIC);
+    Port ( CLK_IN 					: in  STD_LOGIC;
+           KEYCODE_IN 				: in  STD_LOGIC_VECTOR (7 downto 0);
+           KEY_WR_IN 				: in  STD_LOGIC;
+           ASCII_KEY_OUT 			: out STD_LOGIC_VECTOR (7 downto 0);
+           ACII_KEY_WR_OUT	 		: out STD_LOGIC;
+			  ACII_COMMAND_WR_OUT 	: out STD_LOGIC);
 end ps2_keyboard_decode;
 
 architecture Behavioral of ps2_keyboard_decode is
@@ -115,8 +116,13 @@ begin
 	begin
 		if rising_edge(CLK_IN) then
 			if handle_keypressed = '1' and ascii_key /= X"00" then
-				ACII_KEY_WR_OUT <= '1';
+				if ascii_key(7) = '1' then
+					ACII_COMMAND_WR_OUT <= '1';
+				else
+					ACII_KEY_WR_OUT <= '1';
+				end if;
 			else
+				ACII_COMMAND_WR_OUT <= '0';
 				ACII_KEY_WR_OUT <= '0';
 			end if;
 		end if;
