@@ -82,7 +82,7 @@ architecture Behavioral of user_input_handler is
 				 DATA_B_OUT : out STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0));
 	END COMPONENT;
 
-	COMPONENT blk_mem_gen_v7_2
+	COMPONENT FONT_MEM
 	  PORT (
 		 clka : IN STD_LOGIC;
 		 wea : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
@@ -128,6 +128,8 @@ type HANDLE_KEYBOARD_ST is (	IDLE,
 signal hk_state, hk_next_state : HANDLE_KEYBOARD_ST := IDLE;
 
 begin
+
+	debug2 <= unsigned(keyboard_data);
 
 	---- CONVERT UART DATA TO KEYBOARD DATA ----
 
@@ -303,7 +305,7 @@ begin
 	Generic Map ( G_DATA_A_SIZE 	=> TEXT_DATA_OUT'length,
 					  G_ADDR_A_SIZE	=> TEXT_ADDR_IN'length,
 					  G_RELATION		=> 0, --log2(SIZE_A/SIZE_B)
-					  G_INIT_FILE		=> "ascii_space.coe")
+					  G_INIT_FILE		=> "./coe_dir/ascii_space.coe")
    Port Map ( CLK_A_IN 		=> CLK_IN,
 				  WE_A_IN 		=> '0',
 				  ADDR_A_IN 	=> TEXT_ADDR_IN,
@@ -315,7 +317,7 @@ begin
 				  DATA_B_IN 	=> char_buf_wr_data,
 				  DATA_B_OUT 	=> open);
 
-	blk_mem_gen_v7_2_inst : blk_mem_gen_v7_2
+	Font_Mem_inst : FONT_MEM
 	  PORT MAP (
 		 clka 	=> CLK_IN,
 		 wea 		=> "0",

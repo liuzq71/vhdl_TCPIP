@@ -172,7 +172,7 @@ use ieee.std_logic_unsigned.all;
 
 entity spi_master is
     Generic (   
-        N : positive := 32;                                             -- 32bit serial word length is default
+        N : positive := 8;                                              -- serial word length is default
         CPOL : std_logic := '0';                                        -- SPI mode selection (mode 0 default)
         CPHA : std_logic := '0';                                        -- CPOL = clock polarity, CPHA = clock phase.
         PREFETCH : positive := 2;                                       -- prefetch lookahead cycles
@@ -192,19 +192,19 @@ entity spi_master is
         wren_i : in std_logic := 'X';                                   -- user data write enable, starts transmission when interface is idle
         wr_ack_o : out std_logic;                                       -- write acknowledge
         do_valid_o : out std_logic;                                     -- do_o data valid signal, valid during one spi_clk rising edge.
-        do_o : out  std_logic_vector (N-1 downto 0);                    -- parallel output (clocked on rising spi_clk after last bit)
+        do_o : out  std_logic_vector (N-1 downto 0)                     -- parallel output (clocked on rising spi_clk after last bit)
         --- debug ports: can be removed or left unconnected for the application circuit ---
-        sck_ena_o : out std_logic;                                      -- debug: internal sck enable signal
-        sck_ena_ce_o : out std_logic;                                   -- debug: internal sck clock enable signal
-        do_transfer_o : out std_logic;                                  -- debug: internal transfer driver
-        wren_o : out std_logic;                                         -- debug: internal state of the wren_i pulse stretcher
-        rx_bit_reg_o : out std_logic;                                   -- debug: internal rx bit
-        state_dbg_o : out std_logic_vector (3 downto 0);                -- debug: internal state register
-        core_clk_o : out std_logic;
-        core_n_clk_o : out std_logic;
-        core_ce_o : out std_logic;
-        core_n_ce_o : out std_logic;
-        sh_reg_dbg_o : out std_logic_vector (N-1 downto 0)              -- debug: internal shift register
+--        sck_ena_o : out std_logic;                                      -- debug: internal sck enable signal
+--        sck_ena_ce_o : out std_logic;                                   -- debug: internal sck clock enable signal
+--        do_transfer_o : out std_logic;                                  -- debug: internal transfer driver
+--        wren_o : out std_logic;                                         -- debug: internal state of the wren_i pulse stretcher
+--        rx_bit_reg_o : out std_logic;                                   -- debug: internal rx bit
+--        state_dbg_o : out std_logic_vector (3 downto 0);                -- debug: internal state register
+--        core_clk_o : out std_logic;
+--        core_n_clk_o : out std_logic;
+--        core_ce_o : out std_logic;
+--        core_n_ce_o : out std_logic;
+--        sh_reg_dbg_o : out std_logic_vector (N-1 downto 0)              -- debug: internal shift register
     );                      
 end spi_master;
 
@@ -604,17 +604,17 @@ begin
     --  DEBUG LOGIC PROCESSES
     --=============================================================================================
     -- these signals are useful for verification, and can be deleted after debug.
-    do_transfer_proc:   do_transfer_o <= do_transfer_reg;
-    state_dbg_proc:     state_dbg_o <= std_logic_vector(to_unsigned(state_reg, 4));
-    rx_bit_reg_proc:    rx_bit_reg_o <= rx_bit_reg;
-    wren_o_proc:        wren_o <= wren;
-    sh_reg_dbg_proc:    sh_reg_dbg_o <= sh_reg;
-    core_clk_o_proc:    core_clk_o <= core_clk;
-    core_n_clk_o_proc:  core_n_clk_o <= core_n_clk;
-    core_ce_o_proc:     core_ce_o <= core_ce;
-    core_n_ce_o_proc:   core_n_ce_o <= core_n_ce;
-    sck_ena_o_proc:     sck_ena_o <= sck_ena_reg;
-    sck_ena_ce_o_proc:  sck_ena_ce_o <= sck_ena_ce;
+--    do_transfer_proc:   do_transfer_o <= do_transfer_reg;
+--    state_dbg_proc:     state_dbg_o <= std_logic_vector(to_unsigned(state_reg, 4));
+--    rx_bit_reg_proc:    rx_bit_reg_o <= rx_bit_reg;
+--    wren_o_proc:        wren_o <= wren;
+--    sh_reg_dbg_proc:    sh_reg_dbg_o <= sh_reg;
+--    core_clk_o_proc:    core_clk_o <= core_clk;
+--    core_n_clk_o_proc:  core_n_clk_o <= core_n_clk;
+--    core_ce_o_proc:     core_ce_o <= core_ce;
+--    core_n_ce_o_proc:   core_n_ce_o <= core_n_ce;
+--    sck_ena_o_proc:     sck_ena_o <= sck_ena_reg;
+--    sck_ena_ce_o_proc:  sck_ena_ce_o <= sck_ena_ce;
 
 end architecture rtl;
 

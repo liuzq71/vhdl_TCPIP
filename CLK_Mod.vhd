@@ -4,7 +4,7 @@
 -- 
 -- Create Date:    10:16:23 10/19/2014 
 -- Design Name: 
--- Module Name:    CLK_Mod - Behavioral 
+-- Module Name:    clk_mod - Behavioral 
 -- Project Name: 
 -- Target Devices: 
 -- Tool versions: 
@@ -27,12 +27,12 @@ use IEEE.STD_LOGIC_1164.ALL;
 library UNISIM;
 use UNISIM.VComponents.all;
 
-entity CLK_Mod is
+entity clk_mod is
     Port ( CLK_50MHz_IN : in  STD_LOGIC;
            CLK_25Mhz_OUT : out  STD_LOGIC);
-end CLK_Mod;
+end clk_mod;
 
-architecture Behavioral of CLK_Mod is
+architecture Behavioral of clk_mod is
 
 signal clk_1x, clk_1x_bufg :std_logic:='0';
 signal clk0_2xout_tmp, clk0_2xout_bufg, clk0_div2out, clk0_div2out_bufg :std_logic:='0';

@@ -4,7 +4,7 @@
 -- 
 -- Create Date:    21:25:31 10/06/2014 
 -- Design Name: 
--- Module Name:    top_ps2keyboard - Behavioral 
+-- Module Name:    hw_client - Behavioral 
 -- Project Name: 
 -- Target Devices: 
 -- Tool versions: 
@@ -25,7 +25,7 @@ use IEEE.NUMERIC_STD.ALL;
 library UNISIM;
 use UNISIM.VComponents.all;
 
-entity top_ps2keyboard is
+entity hw_client is
     Port ( CLK_IN 		: in STD_LOGIC;
            RX_IN 			: in  STD_LOGIC;
            TX_OUT 		: out  STD_LOGIC;
@@ -41,12 +41,16 @@ entity top_ps2keyboard is
 			  Hsync			: out STD_LOGIC;
 			  Vsync			: out STD_LOGIC;
 			  
+			  SDI				: out STD_LOGIC;
+			  SDO				: in STD_LOGIC;
+			  SCLK 			: out STD_LOGIC;
+			  CS				: out STD_LOGIC;
 			  RESET			: out STD_LOGIC);
-end top_ps2keyboard;
+end hw_client;
 
-architecture Behavioral of top_ps2keyboard is
+architecture Behavioral of hw_client is
 
-	COMPONENT CLK_Mod
+	COMPONENT clk_mod
 		 Port ( CLK_50MHz_IN 	: in  STD_LOGIC;
 				  CLK_25Mhz_OUT 	: out  STD_LOGIC);
 	END COMPONENT;
@@ -95,40 +99,45 @@ architecture Behavioral of top_ps2keyboard is
 
 	COMPONENT spi_master
     Generic (   
-        N : positive := 32;                                             -- 32bit serial word length is default
+        N : positive := 16;                                             -- 8bit serial word length is default
         CPOL : std_logic := '0';                                        -- SPI mode selection (mode 0 default)
         CPHA : std_logic := '0';                                        -- CPOL = clock polarity, CPHA = clock phase.
         PREFETCH : positive := 2;                                       -- prefetch lookahead cycles
         SPI_2X_CLK_DIV : positive := 5);                                -- for a 100MHz sclk_i, yields a 10MHz SCK
-    Port (  
+    Port (
         sclk_i : in std_logic := 'X';                                   -- high-speed serial interface system clock
         pclk_i : in std_logic := 'X';                                   -- high-speed parallel interface system clock
         rst_i : in std_logic := 'X';                                    -- reset core
         ---- serial interface ----
-        spi_ssel_o : out std_logic;                                     -- spi bus slave select line
-        spi_sck_o : out std_logic;                                      -- spi bus sck
-        spi_mosi_o : out std_logic;                                     -- spi bus mosi output
-        spi_miso_i : in std_logic := 'X';                               -- spi bus spi_miso_i input
+        spi_ssel_o 	: out std_logic;                                     -- spi bus slave select line
+        spi_sck_o 	: out std_logic;                                      -- spi bus sck
+        spi_mosi_o 	: out std_logic;                                     -- spi bus mosi output
+        spi_miso_i 	: in std_logic := 'X';                               -- spi bus spi_miso_i input
         ---- parallel interface ----
-        di_req_o : out std_logic;                                       -- preload lookahead data request line
-        di_i : in  std_logic_vector (N-1 downto 0) := (others => 'X');  -- parallel data in (clocked on rising spi_clk after last bit)
-        wren_i : in std_logic := 'X';                                   -- user data write enable, starts transmission when interface is idle
-        wr_ack_o : out std_logic;                                       -- write acknowledge
-        do_valid_o : out std_logic;                                     -- do_o data valid signal, valid during one spi_clk rising edge.
-        do_o : out  std_logic_vector (N-1 downto 0);                    -- parallel output (clocked on rising spi_clk after last bit)
-        --- debug ports: can be removed or left unconnected for the application circuit ---
-        sck_ena_o : out std_logic;                                      -- debug: internal sck enable signal
-        sck_ena_ce_o : out std_logic;                                   -- debug: internal sck clock enable signal
-        do_transfer_o : out std_logic;                                  -- debug: internal transfer driver
-        wren_o : out std_logic;                                         -- debug: internal state of the wren_i pulse stretcher
-        rx_bit_reg_o : out std_logic;                                   -- debug: internal rx bit
-        state_dbg_o : out std_logic_vector (3 downto 0);                -- debug: internal state register
-        core_clk_o : out std_logic;
-        core_n_clk_o : out std_logic;
-        core_ce_o : out std_logic;
-        core_n_ce_o : out std_logic;
-        sh_reg_dbg_o : out std_logic_vector (N-1 downto 0)              -- debug: internal shift register
+        di_req_o 		: out std_logic;                                       -- preload lookahead data request line
+        di_i 			: in  std_logic_vector (N-1 downto 0) := (others => 'X');  -- parallel data in (clocked on rising spi_clk after last bit)
+        wren_i 		: in std_logic := 'X';                                   -- user data write enable, starts transmission when interface is idle
+        wr_ack_o 		: out std_logic;                                       -- write acknowledge
+        do_valid_o 	: out std_logic;                                     -- do_o data valid signal, valid during one spi_clk rising edge.
+        do_o 			: out  std_logic_vector (N-1 downto 0)                     -- parallel output (clocked on rising spi_clk after last bit)
     );                      
+	END COMPONENT;
+
+	COMPONENT TDP_RAM
+		Generic (G_DATA_A_SIZE 	:natural :=32;
+					G_ADDR_A_SIZE	:natural :=9;
+					G_RELATION		:natural :=3;
+					G_INIT_FILE		:string :="");--log2(SIZE_A/SIZE_B)
+		Port ( CLK_A_IN 	: in  STD_LOGIC;
+				 WE_A_IN 	: in  STD_LOGIC;
+				 ADDR_A_IN 	: in  STD_LOGIC_VECTOR (G_ADDR_A_SIZE-1 downto 0);
+				 DATA_A_IN	: in  STD_LOGIC_VECTOR (G_DATA_A_SIZE-1 downto 0);
+				 DATA_A_OUT	: out  STD_LOGIC_VECTOR (G_DATA_A_SIZE-1 downto 0);
+				 CLK_B_IN 	: in  STD_LOGIC;
+				 WE_B_IN 	: in  STD_LOGIC;
+				 ADDR_B_IN 	: in  STD_LOGIC_VECTOR (G_ADDR_A_SIZE+G_RELATION-1 downto 0);
+				 DATA_B_IN 	: in  STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0);
+				 DATA_B_OUT : out STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0));
 	END COMPONENT;
 
 subtype slv is std_logic_vector;
@@ -137,21 +146,31 @@ signal clk_25MHz : std_logic;
 
 signal char_addr, font_addr	: std_logic_vector(11 downto 0);
 signal char_data, font_data	: std_logic_vector(7 downto 0);
+signal debug_addr	: std_logic_vector(11 downto 0);
+signal debug_data	: std_logic_vector(7 downto 0);
 signal r, g, b 					: std_logic := '0';
 signal octl							: std_logic_vector(7 downto 0);
 signal ocrx, ocry 				: std_logic_vector(7 downto 0) := (others => '0');
 
 signal sseg_data : std_logic_vector(15 downto 0) := (others => '0');
 
+signal di_req_o, di_req_o_p 		: std_logic := '0';
+signal sw_p, sw_pp, spi_we 		: std_logic := '0';
+signal do_valid_o, do_valid_o_p 	: std_logic := '0';
+signal debug_we : std_logic := '0';
+signal debug_wr_addr : unsigned(11 downto 0) := (others => '0');
+signal debug_wr_data : std_logic_vector(7 downto 0) := (others => '0');
+signal do_o, tmp : std_logic_vector(15 downto 0);
+
 begin
 
-	RESET <= '1';
+	RESET <= SW_IN(0);
 	
-	CLK_Mod_Inst : CLK_Mod
+	clk_mod_Inst : clk_mod
 	PORT MAP ( 	CLK_50MHz_IN 	=> CLK_IN,
 					CLK_25Mhz_OUT 	=> clk_25MHz);
 	
------------------------------------------------
+---------------------------------------------------------
 	
 	sseg_inst : sseg
 	PORT MAP (	
@@ -159,20 +178,22 @@ begin
 		VAL_IN 	=> sseg_data,
 		SSEG_OUT	=> SSEG_OUT,
 		AN_OUT   => AN_OUT);
+		
+	sseg_data <= do_o;
 
------------------------------------------------
+---------------------------------------------------------
 
 	vgaRed <= r&r&r;
 	vgaGreen <= g&g&g;
 	vgaBlue <= b&b;
-	octl <= "11100" & SW_IN(2 downto 0);
+	octl <= "11100111";
 	
 	vga80x40_inst : vga80x40
 	PORT MAP (	
 		 reset       =>  '0',
 		 clk25MHz    => clk_25MHz,
-		 TEXT_A      => char_addr,
-		 TEXT_D      => char_data,
+		 TEXT_A      => debug_addr, --char_addr,
+		 TEXT_D      => debug_data, --char_data,
 		 FONT_A      => font_addr,
 		 FONT_D      => font_data,
 
@@ -186,6 +207,8 @@ begin
 		 hsync       => Hsync,
 		 vsync       => Vsync);
 
+---------------------------------------------------------
+
 	user_input_handler_inst : user_input_handler
 	PORT MAP (	
 				CLK_IN 				=> clk_25MHz,
@@ -197,9 +220,98 @@ begin
 				FONT_DATA_OUT 		=> font_data,
 				CURSORPOS_X_OUT 	=> ocrx,
 				CURSORPOS_Y_OUT 	=> ocry,
-				DEBUG_OUT			=> sseg_data(7 downto 0),
-				DEBUG_OUT2			=> LED_OUT);
+				DEBUG_OUT			=> open,
+				DEBUG_OUT2			=> debug_wr_data);
 
+---------------------------------------------------------
+
+	LED_OUT(7 downto 4) <= debug_wr_data(3 downto 0);
+	LED_OUT(3 downto 1) <= "000";
+
+	process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			di_req_o_p <= di_req_o;
+			if di_req_o_p = '0' and di_req_o = '1' then
+				LED_OUT(0) <= '1';
+			elsif SW_IN(2) = '1' then
+				LED_OUT(0) <= '0';
+			end if;
+		end if;
+	end process;
+	
+	process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			sw_p <= SW_IN(3);
+			sw_pp <= sw_p;
+			if sw_pp = '0' and sw_p = '1' then
+				spi_we <= '1';
+			elsif SW_IN(2) = '1' then
+				spi_we <= '0';
+			end if;
+		end if;
+	end process;
+	
+	process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			do_valid_o_p <= do_valid_o;
+			if do_valid_o_p = '0' and do_valid_o = '1' then
+				debug_we <= '1';
+			else
+				debug_we <= '0';
+			end if;
+			if debug_we = '1' then
+				debug_wr_addr <= debug_wr_addr + 1;
+			end if;
+		end if;
+	end process;
+
+	spi_master_inst : spi_master
+    Generic Map (   
+        N 					=> 16,			-- 8bit serial word length is default
+        CPOL 				=> '0',			-- SPI mode selection (mode 0 default)
+        CPHA 				=> '0',			-- CPOL = clock polarity, CPHA = clock phase.
+        PREFETCH 			=> 2,				-- prefetch lookahead cycles
+        SPI_2X_CLK_DIV 	=> 10)			-- for a 25MHz sclk_i, yields a 1.25MHz SCK
+    Port Map (
+        sclk_i 		=> clk_25MHz,		-- high-speed serial interface system clock
+        pclk_i 		=> clk_25MHz,		-- high-speed parallel interface system clock
+        rst_i 			=> SW_IN(1),		-- reset core
+		  
+        ---- serial interface ----
+        spi_ssel_o 	=> CS,                              -- spi bus slave select line
+        spi_sck_o 	=> SCLK,                            -- spi bus sck
+        spi_mosi_o 	=> SDI,                             -- spi bus mosi output
+        spi_miso_i 	=> SDO,                            	-- spi bus spi_miso_i input
+        
+		  ---- parallel interface ----
+        di_req_o 		=> di_req_o,  	-- preload lookahead data request line
+        di_i 			=> tmp, 	-- parallel data in (clocked on rising spi_clk after last bit)
+        wren_i 		=> spi_we,		-- user data write enable, starts transmission when interface is idle
+        wr_ack_o 		=> open,			-- write acknowledge
+        do_valid_o 	=> do_valid_o, -- do_o data valid signal, valid during one spi_clk rising edge.
+        do_o 			=> do_o        -- parallel output (clocked on rising spi_clk after last bit)
+    );
+
+	tmp <= SW_IN(7 downto 4) & debug_wr_data(3 downto 0) & "00000000";
+
+	debug_buf : TDP_RAM
+	Generic Map ( G_DATA_A_SIZE 	=> debug_data'length,
+					  G_ADDR_A_SIZE	=> debug_addr'length,
+					  G_RELATION		=> 0, --log2(SIZE_A/SIZE_B)
+					  G_INIT_FILE		=> "./coe_dir/ascii_space.coe")
+   Port Map ( CLK_A_IN 		=> CLK_IN,
+				  WE_A_IN 		=> '0',
+				  ADDR_A_IN 	=> debug_addr,
+				  DATA_A_IN		=> X"00",
+				  DATA_A_OUT	=> debug_data,
+				  CLK_B_IN 		=> CLK_IN,
+				  WE_B_IN 		=> debug_we,
+				  ADDR_B_IN 	=> slv(debug_wr_addr),
+				  DATA_B_IN 	=> "00000000",
+				  DATA_B_OUT 	=> open);
 
 end Behavioral;
 
