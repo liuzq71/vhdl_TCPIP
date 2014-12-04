@@ -97,32 +97,6 @@ architecture Behavioral of hw_client is
 				  DEBUG_OUT2		: out STD_LOGIC_VECTOR(7 downto 0));
 	END COMPONENT;
 
-	COMPONENT spi_master
-    Generic (   
-        N : positive := 16;                                             -- 8bit serial word length is default
-        CPOL : std_logic := '0';                                        -- SPI mode selection (mode 0 default)
-        CPHA : std_logic := '0';                                        -- CPOL = clock polarity, CPHA = clock phase.
-        PREFETCH : positive := 2;                                       -- prefetch lookahead cycles
-        SPI_2X_CLK_DIV : positive := 5);                                -- for a 100MHz sclk_i, yields a 10MHz SCK
-    Port (
-        sclk_i : in std_logic := 'X';                                   -- high-speed serial interface system clock
-        pclk_i : in std_logic := 'X';                                   -- high-speed parallel interface system clock
-        rst_i : in std_logic := 'X';                                    -- reset core
-        ---- serial interface ----
-        spi_ssel_o 	: out std_logic;                                     -- spi bus slave select line
-        spi_sck_o 	: out std_logic;                                      -- spi bus sck
-        spi_mosi_o 	: out std_logic;                                     -- spi bus mosi output
-        spi_miso_i 	: in std_logic := 'X';                               -- spi bus spi_miso_i input
-        ---- parallel interface ----
-        di_req_o 		: out std_logic;                                       -- preload lookahead data request line
-        di_i 			: in  std_logic_vector (N-1 downto 0) := (others => 'X');  -- parallel data in (clocked on rising spi_clk after last bit)
-        wren_i 		: in std_logic := 'X';                                   -- user data write enable, starts transmission when interface is idle
-        wr_ack_o 		: out std_logic;                                       -- write acknowledge
-        do_valid_o 	: out std_logic;                                     -- do_o data valid signal, valid during one spi_clk rising edge.
-        do_o 			: out  std_logic_vector (N-1 downto 0)                     -- parallel output (clocked on rising spi_clk after last bit)
-    );                      
-	END COMPONENT;
-
 	COMPONENT TDP_RAM
 		Generic (G_DATA_A_SIZE 	:natural :=32;
 					G_ADDR_A_SIZE	:natural :=9;
@@ -162,6 +136,9 @@ signal debug_wr_addr : unsigned(11 downto 0) := (others => '0');
 signal debug_wr_data : std_logic_vector(7 downto 0) := (others => '0');
 signal do_o, tmp : std_logic_vector(15 downto 0);
 
+signal buttons, buttons_prev, buttons_edge	: std_logic_vector(3 downto 0) := (others => '0');
+signal debounce_count								: unsigned(15 downto 0) := (others => '0');
+
 begin
 
 	RESET <= SW_IN(0);
@@ -180,6 +157,33 @@ begin
 		AN_OUT   => AN_OUT);
 		
 	sseg_data <= do_o;
+	LED_OUT <= (others => '0');
+	
+	process(clk_25MHz)
+	begin
+		if rising_edge(clk_25MHz) then
+			debounce_count <= debounce_count + 1;
+			buttons_prev <= buttons;
+			if debounce_count = X"0000" then
+				buttons <= BUTTON_IN;
+			end if;
+			if buttons_prev(0) = '0' and buttons(0) = '1' then
+				buttons_edge(0) <= '1';
+			else
+				buttons_edge(0) <= '0';
+			end if;
+			if buttons_prev(1) = '0' and buttons(1) = '1' then
+				buttons_edge(1) <= '1';
+			else
+				buttons_edge(1) <= '0';
+			end if;
+			if buttons_prev(3) = '0' and buttons(3) = '1' then
+				buttons_edge(3) <= '1';
+			else
+				buttons_edge(3) <= '0';
+			end if;
+		end if;
+	end process;
 
 ---------------------------------------------------------
 
@@ -225,77 +229,11 @@ begin
 
 ---------------------------------------------------------
 
-	LED_OUT(7 downto 4) <= debug_wr_data(3 downto 0);
-	LED_OUT(3 downto 1) <= "000";
+	spi_we <= buttons_edge(0);
 
-	process(CLK_IN)
-	begin
-		if rising_edge(CLK_IN) then
-			di_req_o_p <= di_req_o;
-			if di_req_o_p = '0' and di_req_o = '1' then
-				LED_OUT(0) <= '1';
-			elsif SW_IN(2) = '1' then
-				LED_OUT(0) <= '0';
-			end if;
-		end if;
-	end process;
-	
-	process(CLK_IN)
-	begin
-		if rising_edge(CLK_IN) then
-			sw_p <= SW_IN(3);
-			sw_pp <= sw_p;
-			if sw_pp = '0' and sw_p = '1' then
-				spi_we <= '1';
-			elsif SW_IN(2) = '1' then
-				spi_we <= '0';
-			end if;
-		end if;
-	end process;
-	
-	process(CLK_IN)
-	begin
-		if rising_edge(CLK_IN) then
-			do_valid_o_p <= do_valid_o;
-			if do_valid_o_p = '0' and do_valid_o = '1' then
-				debug_we <= '1';
-			else
-				debug_we <= '0';
-			end if;
-			if debug_we = '1' then
-				debug_wr_addr <= debug_wr_addr + 1;
-			end if;
-		end if;
-	end process;
+	tmp <= "00011001" & SW_IN(7 downto 0);
 
-	spi_master_inst : spi_master
-    Generic Map (   
-        N 					=> 16,			-- 8bit serial word length is default
-        CPOL 				=> '0',			-- SPI mode selection (mode 0 default)
-        CPHA 				=> '0',			-- CPOL = clock polarity, CPHA = clock phase.
-        PREFETCH 			=> 2,				-- prefetch lookahead cycles
-        SPI_2X_CLK_DIV 	=> 10)			-- for a 25MHz sclk_i, yields a 1.25MHz SCK
-    Port Map (
-        sclk_i 		=> clk_25MHz,		-- high-speed serial interface system clock
-        pclk_i 		=> clk_25MHz,		-- high-speed parallel interface system clock
-        rst_i 			=> SW_IN(1),		-- reset core
-		  
-        ---- serial interface ----
-        spi_ssel_o 	=> CS,                              -- spi bus slave select line
-        spi_sck_o 	=> SCLK,                            -- spi bus sck
-        spi_mosi_o 	=> SDI,                             -- spi bus mosi output
-        spi_miso_i 	=> SDO,                            	-- spi bus spi_miso_i input
-        
-		  ---- parallel interface ----
-        di_req_o 		=> di_req_o,  	-- preload lookahead data request line
-        di_i 			=> tmp, 	-- parallel data in (clocked on rising spi_clk after last bit)
-        wren_i 		=> spi_we,		-- user data write enable, starts transmission when interface is idle
-        wr_ack_o 		=> open,			-- write acknowledge
-        do_valid_o 	=> do_valid_o, -- do_o data valid signal, valid during one spi_clk rising edge.
-        do_o 			=> do_o        -- parallel output (clocked on rising spi_clk after last bit)
-    );
 
-	tmp <= SW_IN(7 downto 4) & debug_wr_data(3 downto 0) & "00000000";
 
 	debug_buf : TDP_RAM
 	Generic Map ( G_DATA_A_SIZE 	=> debug_data'length,

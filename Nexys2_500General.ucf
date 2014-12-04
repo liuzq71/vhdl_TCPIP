@@ -208,10 +208,10 @@ NET "Vsync"       LOC = "U3";    # Bank = 2, Pin name = IO_L01P_2/CSO_B, Type = 
 ##JA
 #NET "JA<0>"      LOC = "L15";   # Bank = 1, Pin name = IO_L09N_1/A11, Type = DUAL,                   Sch name = JA1
 #NET "JA<1>"      LOC = "K12";   # Bank = 1, Pin name = IO_L11N_1/A9/RHCLK1, Type = RHCLK/DUAL,       Sch name = JA2
-NET "SCLK"        LOC = "L17";   # Bank = 1, Pin name = IO_L10N_1/VREF_1, Type = VREF,                Sch name = JA3
+NET "SCLK"        LOC = "L17" | DRIVE=24;   # Bank = 1, Pin name = IO_L10N_1/VREF_1, Type = VREF,                Sch name = JA3
 NET "SDI"      	LOC = "M15";   # Bank = 1, Pin name = IO_L07P_1, Type = I/O,                        Sch name = JA4
-NET "RESET"       LOC = "K13";   # Bank = 1, Pin name = IO_L11P_1/A10/RHCLK0, Type = RHCLK/DUAL,      Sch name = JA7
-NET "CS" 			LOC = "L16";   # Bank = 1, Pin name = IO_L09P_1/A12, Type = DUAL,                   Sch name = JA8
+NET "CS"       	LOC = "K13";   # Bank = 1, Pin name = IO_L11P_1/A10/RHCLK0, Type = RHCLK/DUAL,      Sch name = JA7
+NET "RESET" 		LOC = "L16";   # Bank = 1, Pin name = IO_L09P_1/A12, Type = DUAL,                   Sch name = JA8
 #NET "JA<6>"      LOC = "M14";   # Bank = 1, Pin name = IO_L05P_1, Type = I/O,                        Sch name = JA9
 NET "SDO"       	LOC = "M16";   # Bank = 1, Pin name = IO_L07N_1, Type = I/O,                        Sch name = JA10
 
