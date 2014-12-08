@@ -48,13 +48,13 @@ end spi_mod;
 
 architecture Behavioral of spi_mod is
 
-constant C_clk_div 				: unsigned(7 downto 0) := X"0F";
+constant C_clk_div 				: unsigned(7 downto 0) := X"01";
 constant C_spi_clk_polarity 	: std_logic := '0';
 constant C_wr_len					: unsigned(3 downto 0) := X"F";
 constant C_rd_8len				: unsigned(7 downto 0) := X"0F"; -- 8 bit addr, 8 bit data
 constant C_rd_16len				: unsigned(7 downto 0) := X"17"; -- 8 bit addr, 16 bit data
 constant C_wr_cont_len			: unsigned(3 downto 0) := X"7";
-constant C_oper_cmplt_init		: unsigned(7 downto 0) := X"0D";
+constant C_oper_cmplt_init		: unsigned(7 downto 0) := X"00";
 
 signal clk_counter : unsigned(7 downto 0) := C_clk_div;
 signal clk_div, spi_clk, spi_clk_o : std_logic := '0';
@@ -209,7 +209,7 @@ begin
 				cs <= '0';
 			elsif doing_rd_p = '0' and doing_rd = '1' then
 				cs <= '0';
-			elsif operation_cmplt_cntr = X"00" then
+			elsif operation_cmplt = '1' then
 				cs <= '1';
 			end if;
 		end if;

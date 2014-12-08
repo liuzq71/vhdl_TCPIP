@@ -41,8 +41,8 @@ entity hw_client is
 			  Hsync			: out STD_LOGIC;
 			  Vsync			: out STD_LOGIC;
 			  
-			  SDI				: out STD_LOGIC;
-			  SDO				: in STD_LOGIC;
+			  SDI				: in STD_LOGIC;
+			  SDO				: out STD_LOGIC;
 			  SCLK 			: out STD_LOGIC;
 			  CS				: out STD_LOGIC;
 			  RESET			: out STD_LOGIC);
@@ -114,6 +114,35 @@ architecture Behavioral of hw_client is
 				 DATA_B_OUT : out STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0));
 	END COMPONENT;
 
+	COMPONENT spi_mod
+		Port ( 	CLK_IN 				: in  STD_LOGIC;
+					RST_IN 				: in  STD_LOGIC;
+					WR_CONTINUOUS_IN 	: in  STD_LOGIC;
+					WE_IN 				: in  STD_LOGIC;
+					WR_ADDR_IN			: in 	STD_LOGIC_VECTOR (7 downto 0);
+					WR_DATA_IN 			: in  STD_LOGIC_VECTOR (7 downto 0);
+					WR_DATA_CMPLT_OUT	: out STD_LOGIC;
+					RD_IN					: in	STD_LOGIC;
+					RD_WIDTH_IN 		: in  STD_LOGIC;
+					RD_ADDR_IN 			: in  STD_LOGIC_VECTOR (7 downto 0);
+					RD_DATA_OUT 		: out STD_LOGIC_VECTOR (7 downto 0);
+					RD_DATA_CMPLT_OUT	: out STD_LOGIC;
+					
+					SDI_OUT				: out STD_LOGIC;
+					SDO_IN				: in 	STD_LOGIC;
+					SCLK_OUT				: out STD_LOGIC;
+					CS_OUT				: out STD_LOGIC);
+	END COMPONENT;
+
+	COMPONENT led_mod is
+    Port ( CLK_IN 				: in  STD_LOGIC;
+           LED_0_STATE_IN 		: in  STD_LOGIC_VECTOR (2 downto 0);
+           LED_1_STATE_IN 		: in  STD_LOGIC_VECTOR (2 downto 0);
+			  ERROR_CODE_IN		: in	STD_LOGIC_VECTOR (4 downto 0);
+			  ERROR_CODE_EN_IN	: in	STD_LOGIC;
+           LEDS_OUT 				: out  STD_LOGIC_VECTOR (1 downto 0));
+	END COMPONENT;
+
 subtype slv is std_logic_vector;
 
 signal clk_25MHz : std_logic;
@@ -128,26 +157,24 @@ signal ocrx, ocry 				: std_logic_vector(7 downto 0) := (others => '0');
 
 signal sseg_data : std_logic_vector(15 downto 0) := (others => '0');
 
-signal di_req_o, di_req_o_p 		: std_logic := '0';
-signal sw_p, sw_pp, spi_we 		: std_logic := '0';
-signal do_valid_o, do_valid_o_p 	: std_logic := '0';
 signal debug_we : std_logic := '0';
 signal debug_wr_addr : unsigned(11 downto 0) := (others => '0');
 signal debug_wr_data : std_logic_vector(7 downto 0) := (others => '0');
-signal do_o, tmp : std_logic_vector(15 downto 0);
 
+signal tmp_addr, tmp_data : std_logic_vector(7 downto 0) := (others => '0');
 signal buttons, buttons_prev, buttons_edge	: std_logic_vector(3 downto 0) := (others => '0');
 signal debounce_count								: unsigned(15 downto 0) := (others => '0');
 
 begin
 
-	RESET <= SW_IN(0);
+	RESET <= '0';
+--	INT <= '1';
 	
 	clk_mod_Inst : clk_mod
 	PORT MAP ( 	CLK_50MHz_IN 	=> CLK_IN,
 					CLK_25Mhz_OUT 	=> clk_25MHz);
 	
----------------------------------------------------------
+--------------------------- DEBUG LOGIC ------------------------------
 	
 	sseg_inst : sseg
 	PORT MAP (	
@@ -155,9 +182,16 @@ begin
 		VAL_IN 	=> sseg_data,
 		SSEG_OUT	=> SSEG_OUT,
 		AN_OUT   => AN_OUT);
-		
-	sseg_data <= do_o;
-	LED_OUT <= (others => '0');
+
+	LED_OUT(7 downto 2) <= "000000";
+	
+	led_mod_inst : led_mod
+    Port Map ( CLK_IN 				=> clk_25MHz,
+					LED_0_STATE_IN 	=> "111",
+					LED_1_STATE_IN 	=> "111",
+					ERROR_CODE_IN		=> SW_IN(4 downto 0),
+					ERROR_CODE_EN_IN	=> buttons_edge(0),
+					LEDS_OUT 			=> LED_OUT(1 downto 0));
 	
 	process(clk_25MHz)
 	begin
@@ -177,6 +211,11 @@ begin
 			else
 				buttons_edge(1) <= '0';
 			end if;
+			if buttons_prev(2) = '0' and buttons(2) = '1' then
+				buttons_edge(2) <= '1';
+			else
+				buttons_edge(2) <= '0';
+			end if;
 			if buttons_prev(3) = '0' and buttons(3) = '1' then
 				buttons_edge(3) <= '1';
 			else
@@ -185,7 +224,7 @@ begin
 		end if;
 	end process;
 
----------------------------------------------------------
+--------------------------- UI I/O ------------------------------
 
 	vgaRed <= r&r&r;
 	vgaGreen <= g&g&g;
@@ -211,8 +250,6 @@ begin
 		 hsync       => Hsync,
 		 vsync       => Vsync);
 
----------------------------------------------------------
-
 	user_input_handler_inst : user_input_handler
 	PORT MAP (	
 				CLK_IN 				=> clk_25MHz,
@@ -226,30 +263,55 @@ begin
 				CURSORPOS_Y_OUT 	=> ocry,
 				DEBUG_OUT			=> open,
 				DEBUG_OUT2			=> debug_wr_data);
-
----------------------------------------------------------
-
-	spi_we <= buttons_edge(0);
-
-	tmp <= "00011001" & SW_IN(7 downto 0);
-
-
-
+				
 	debug_buf : TDP_RAM
 	Generic Map ( G_DATA_A_SIZE 	=> debug_data'length,
 					  G_ADDR_A_SIZE	=> debug_addr'length,
 					  G_RELATION		=> 0, --log2(SIZE_A/SIZE_B)
 					  G_INIT_FILE		=> "./coe_dir/ascii_space.coe")
-   Port Map ( CLK_A_IN 		=> CLK_IN,
+   Port Map ( CLK_A_IN 		=> clk_25MHz,
 				  WE_A_IN 		=> '0',
 				  ADDR_A_IN 	=> debug_addr,
 				  DATA_A_IN		=> X"00",
 				  DATA_A_OUT	=> debug_data,
-				  CLK_B_IN 		=> CLK_IN,
+				  CLK_B_IN 		=> clk_25MHz,
 				  WE_B_IN 		=> debug_we,
 				  ADDR_B_IN 	=> slv(debug_wr_addr),
 				  DATA_B_IN 	=> "00000000",
 				  DATA_B_OUT 	=> open);
+
+------------------------- SPI --------------------------------
+
+	process(clk_25MHz)
+	begin
+		if rising_edge(clk_25MHz) then
+			if buttons_edge(2) = '1' then
+				tmp_addr <= SW_IN(7 downto 0);
+			end if;
+			if buttons_edge(3) = '1' then
+				tmp_data <= SW_IN(7 downto 0);
+			end if;
+		end if;
+	end process;
+
+	spi_mod_inst : spi_mod
+		Port Map ( 	CLK_IN 				=> clk_25MHz,
+						RST_IN 				=> '0',
+						WR_CONTINUOUS_IN 	=> '0',
+						WE_IN 				=> buttons_edge(0),
+						WR_ADDR_IN			=> tmp_addr,
+						WR_DATA_IN 			=> tmp_data,
+						WR_DATA_CMPLT_OUT	=> open,
+						RD_IN					=> buttons_edge(1),
+						RD_WIDTH_IN 		=> '0',
+						RD_ADDR_IN 			=> tmp_addr,
+						RD_DATA_OUT 		=> sseg_data(7 downto 0),
+						RD_DATA_CMPLT_OUT	=> open,
+					
+						SDI_OUT				=> SDO,
+						SDO_IN				=> SDI,
+						SCLK_OUT				=> SCLK,
+						CS_OUT				=> CS);
 
 end Behavioral;
 
