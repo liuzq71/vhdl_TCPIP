@@ -136,8 +136,7 @@ architecture Behavioral of hw_client is
 
 	COMPONENT led_mod is
     Port ( CLK_IN 				: in  STD_LOGIC;
-           LED_0_STATE_IN 		: in  STD_LOGIC_VECTOR (2 downto 0);
-           LED_1_STATE_IN 		: in  STD_LOGIC_VECTOR (2 downto 0);
+           LED_STATE_IN 		: in  STD_LOGIC_VECTOR (2 downto 0);
 			  ERROR_CODE_IN		: in	STD_LOGIC_VECTOR (4 downto 0);
 			  ERROR_CODE_EN_IN	: in	STD_LOGIC;
            LEDS_OUT 				: out  STD_LOGIC_VECTOR (1 downto 0));
@@ -187,8 +186,7 @@ begin
 	
 	led_mod_inst : led_mod
     Port Map ( CLK_IN 				=> clk_25MHz,
-					LED_0_STATE_IN 	=> "111",
-					LED_1_STATE_IN 	=> "111",
+					LED_STATE_IN 		=> SW_IN(7 downto 5),
 					ERROR_CODE_IN		=> SW_IN(4 downto 0),
 					ERROR_CODE_EN_IN	=> buttons_edge(0),
 					LEDS_OUT 			=> LED_OUT(1 downto 0));

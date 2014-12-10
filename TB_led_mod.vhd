@@ -42,8 +42,7 @@ ARCHITECTURE behavior OF TB_led_mod IS
     COMPONENT led_mod
     PORT(
          CLK_IN : IN  std_logic;
-         LED_0_STATE_IN : IN  std_logic_vector(2 downto 0);
-         LED_1_STATE_IN : IN  std_logic_vector(2 downto 0);
+         LED_STATE_IN : IN  std_logic_vector(2 downto 0);
          ERROR_CODE_IN : IN  std_logic_vector(4 downto 0);
          ERROR_CODE_EN_IN : IN  std_logic;
          LEDS_OUT : OUT  std_logic_vector(1 downto 0)
@@ -53,8 +52,7 @@ ARCHITECTURE behavior OF TB_led_mod IS
 
    --Inputs
    signal CLK_IN : std_logic := '0';
-   signal LED_0_STATE_IN : std_logic_vector(2 downto 0) := (others => '0');
-   signal LED_1_STATE_IN : std_logic_vector(2 downto 0) := (others => '0');
+   signal LED_STATE_IN : std_logic_vector(2 downto 0) := (others => '0');
    signal ERROR_CODE_IN : std_logic_vector(4 downto 0) := (others => '0');
    signal ERROR_CODE_EN_IN : std_logic := '0';
 
@@ -69,8 +67,7 @@ BEGIN
 	-- Instantiate the Unit Under Test (UUT)
    uut: led_mod PORT MAP (
           CLK_IN => CLK_IN,
-          LED_0_STATE_IN => LED_0_STATE_IN,
-          LED_1_STATE_IN => LED_1_STATE_IN,
+          LED_STATE_IN => LED_STATE_IN,
           ERROR_CODE_IN => ERROR_CODE_IN,
           ERROR_CODE_EN_IN => ERROR_CODE_EN_IN,
           LEDS_OUT => LEDS_OUT
@@ -102,8 +99,7 @@ BEGIN
 		ERROR_CODE_EN_IN <= '0';
 
 		wait for CLK_IN_period*10;
-		LED_0_STATE_IN <= "111";
-		LED_1_STATE_IN <= "111";
+		LED_STATE_IN <= "111";
 
       wait;
    end process;
