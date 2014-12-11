@@ -26,26 +26,34 @@ library UNISIM;
 use UNISIM.VComponents.all;
 
 entity hw_client is
-    Port ( CLK_IN 		: in STD_LOGIC;
-           RX_IN 			: in  STD_LOGIC;
-           TX_OUT 		: out  STD_LOGIC;
-           LED_OUT 		: out STD_LOGIC_VECTOR (7 downto 0);
-           SSEG_OUT 		: out STD_LOGIC_VECTOR (7 downto 0);
-           AN_OUT 		: out STD_LOGIC_VECTOR (3 downto 0);
-           SW_IN 			: in STD_LOGIC_VECTOR (7 downto 0);
-           BUTTON_IN 	: in STD_LOGIC_VECTOR (3 downto 0);
-			  
-			  vgaRed			: out STD_LOGIC_VECTOR (2 downto 0);
-			  vgaGreen		: out STD_LOGIC_VECTOR (2 downto 0);
-			  vgaBlue		: out STD_LOGIC_VECTOR (1 downto 0);
-			  Hsync			: out STD_LOGIC;
-			  Vsync			: out STD_LOGIC;
-			  
-			  SDI				: in STD_LOGIC;
-			  SDO				: out STD_LOGIC;
-			  SCLK 			: out STD_LOGIC;
-			  CS				: out STD_LOGIC;
-			  RESET			: out STD_LOGIC);
+    Port ( 	CLK_IN 		: in STD_LOGIC;
+				RX_IN 		: in  STD_LOGIC;
+				TX_OUT 		: out  STD_LOGIC;
+				LED_OUT 		: out STD_LOGIC_VECTOR (7 downto 0);
+				SSEG_OUT 	: out STD_LOGIC_VECTOR (7 downto 0);
+				AN_OUT 		: out STD_LOGIC_VECTOR (3 downto 0);
+				SW_IN 		: in STD_LOGIC_VECTOR (7 downto 0);
+				BUTTON_IN 	: in STD_LOGIC_VECTOR (3 downto 0);
+
+				vgaRed		: out STD_LOGIC_VECTOR (2 downto 0);
+				vgaGreen		: out STD_LOGIC_VECTOR (2 downto 0);
+				vgaBlue		: out STD_LOGIC_VECTOR (1 downto 0);
+				Hsync			: out STD_LOGIC;
+				Vsync			: out STD_LOGIC;
+
+				SF_DATA			: inout std_logic_vector(15 downto 0);
+				SF_ADDR			: out std_logic_vector(23 downto 1);
+				SF_CS_BAR		: out std_logic;
+				SF_WR_BAR		: out std_logic;
+				SF_OE_BAR		: out std_logic;
+				SF_RESET_BAR	: out std_logic;
+				SF_STATUS		: in std_logic;
+
+				SDI			: in STD_LOGIC;
+				SDO			: out STD_LOGIC;
+				SCLK 			: out STD_LOGIC;
+				CS				: out STD_LOGIC;
+				RESET			: out STD_LOGIC);
 end hw_client;
 
 architecture Behavioral of hw_client is
@@ -140,6 +148,31 @@ architecture Behavioral of hw_client is
 			  ERROR_CODE_IN		: in	STD_LOGIC_VECTOR (4 downto 0);
 			  ERROR_CODE_EN_IN	: in	STD_LOGIC;
            LEDS_OUT 				: out  STD_LOGIC_VECTOR (1 downto 0));
+	END COMPONENT;
+	
+	COMPONENT sf_mod is
+    Port ( CLK_IN 				: in  STD_LOGIC;
+           RESET_IN 				: in  STD_LOGIC;
+			  
+			  -- Command interface
+           INIT_IN 				: in  STD_LOGIC;
+           INIT_CMPLT_OUT		: out STD_LOGIC;
+			  ERROR_OUT				: out STD_LOGIC;
+			  
+			  -- Ethernet command interface
+			  ADDR_IN				: in 	STD_LOGIC_VECTOR (23 downto 1);
+			  DATA_OUT 				: out STD_LOGIC_VECTOR (15 downto 0);
+			  RD_IN					: in  STD_LOGIC;
+			  RD_CMPLT_OUT			: out STD_LOGIC;
+			  
+			  -- Flash interface
+           SF_DATA_IN 			: in   STD_LOGIC_VECTOR (15 downto 0);
+           SF_ADDR_OUT 			: out  STD_LOGIC_VECTOR (23 downto 1);
+           SF_CS_BAR_OUT 		: out  STD_LOGIC;
+           SF_OE_BAR_OUT 		: out  STD_LOGIC;
+           SF_WR_BAR_OUT 		: out  STD_LOGIC;
+           SF_RESET_BAR_OUT 	: out  STD_LOGIC;
+           SF_STATUS_IN 		: in   STD_LOGIC);
 	END COMPONENT;
 
 subtype slv is std_logic_vector;
@@ -310,6 +343,34 @@ begin
 						SDO_IN				=> SDI,
 						SCLK_OUT				=> SCLK,
 						CS_OUT				=> CS);
+
+------------------------- STRATA FLASH --------------------------------
+
+	
+
+	sf_mod_inst : sf_mod
+    Port Map ( 	CLK_IN 				=> clk_25MHz,
+						RESET_IN 			=> '0',
+			  
+					  -- Command interface
+					  INIT_IN 				=> '0',
+					  INIT_CMPLT_OUT		=> open,
+					  ERROR_OUT				=> open,
+					  
+					  -- Ethernet command interface
+					  ADDR_IN				=> "000"&X"00000",
+					  DATA_OUT 				=> open,
+					  RD_IN					=> '0',
+					  RD_CMPLT_OUT			=> open,
+					  
+					  -- Flash interface
+					  SF_DATA_IN 			=> SF_DATA,
+					  SF_ADDR_OUT 			=> SF_ADDR,
+					  SF_CS_BAR_OUT 		=> SF_CS_BAR,
+					  SF_OE_BAR_OUT 		=> SF_OE_BAR,
+					  SF_WR_BAR_OUT		=> SF_WR_BAR,
+					  SF_RESET_BAR_OUT 	=> SF_RESET_BAR,
+					  SF_STATUS_IN 		=> SF_STATUS);
 
 end Behavioral;
 
