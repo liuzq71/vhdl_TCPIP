@@ -37,27 +37,26 @@ END TB_spi_mod;
  
 ARCHITECTURE behavior OF TB_spi_mod IS 
  
-    -- Component Declaration for the Unit Under Test (UUT)
- 
     COMPONENT spi_mod
     PORT(
-         CLK_IN 				: IN  std_logic;
-         RST_IN 				: IN  std_logic;
-         WR_CONTINUOUS_IN 	: IN  std_logic;
-         WE_IN 				: IN  std_logic;
-         WR_ADDR_IN 			: IN  std_logic_vector(7 downto 0);
-         WR_DATA_IN 			: IN  std_logic_vector(7 downto 0);
-         WR_DATA_CMPLT_OUT : OUT  std_logic;
-         RD_IN 				: IN  std_logic;
-         RD_WIDTH_IN 		: IN  std_logic;
-         RD_ADDR_IN 			: IN  std_logic_vector(7 downto 0);
-         RD_DATA_OUT 		: OUT  std_logic_vector(7 downto 0);
-			RD_DATA_CMPLT_OUT	: out STD_LOGIC;
-         SDI_OUT 				: OUT  std_logic;
-         SDO_IN 				: IN  std_logic;
-         SCLK_OUT 			: OUT  std_logic;
-         CS_OUT 				: OUT  std_logic
-        );
+         CLK_IN 						: IN  std_logic;
+         RST_IN 						: IN  std_logic;
+         WR_CONTINUOUS_IN 			: IN  std_logic;
+         WE_IN 						: IN  std_logic;
+         WR_ADDR_IN 					: IN  std_logic_vector(7 downto 0);
+         WR_DATA_IN 					: IN  std_logic_vector(7 downto 0);
+         WR_DATA_CMPLT_OUT 		: OUT std_logic;
+         RD_IN 						: IN  std_logic;
+         RD_WIDTH_IN 				: IN  std_logic;
+         RD_ADDR_IN 					: IN  std_logic_vector(7 downto 0);
+         RD_DATA_OUT 				: OUT std_logic_vector(7 downto 0);
+			RD_DATA_CMPLT_OUT			: out STD_LOGIC;
+			SLOW_CS_EN_IN				: in STD_LOGIC;
+			OPER_CMPLT_POST_CS_OUT 	: out STD_LOGIC;
+         SDI_OUT 						: OUT std_logic;
+         SDO_IN 						: IN  std_logic;
+         SCLK_OUT 					: OUT std_logic;
+         CS_OUT 						: OUT std_logic);
     END COMPONENT;
     
 
@@ -68,13 +67,13 @@ ARCHITECTURE behavior OF TB_spi_mod IS
    signal WE_IN : std_logic := '0';
    signal WR_ADDR_IN : std_logic_vector(7 downto 0) := (others => '0');
    signal WR_DATA_IN : std_logic_vector(7 downto 0) := (others => '0');
-   signal RD_IN : std_logic := '0';
+   signal RD_IN, OPER_CMPLT_POST_CS_OUT : std_logic := '0';
    signal RD_WIDTH_IN : std_logic := '0';
    signal RD_ADDR_IN : std_logic_vector(7 downto 0) := (others => '0');
    signal SDO : std_logic := '0';
 
  	--Outputs
-   signal WR_DATA_CMPLT_OUT : std_logic;
+   signal WR_DATA_CMPLT_OUT, SLOW_CS_EN_IN : std_logic;
    signal RD_DATA_OUT : std_logic_vector(7 downto 0);
    signal SDI, RD_DATA_CMPLT_OUT : std_logic;
    signal SCLK : std_logic;
@@ -99,6 +98,8 @@ BEGIN
           RD_ADDR_IN => RD_ADDR_IN,
           RD_DATA_OUT => RD_DATA_OUT,
 			 RD_DATA_CMPLT_OUT => RD_DATA_CMPLT_OUT,
+			 SLOW_CS_EN_IN => SLOW_CS_EN_IN,
+			 OPER_CMPLT_POST_CS_OUT => OPER_CMPLT_POST_CS_OUT,
           SDI_OUT => SDI,
           SDO_IN => SDO,
           SCLK_OUT => SCLK,
@@ -118,6 +119,8 @@ BEGIN
    stim_proc: process
    begin
       wait for CLK_IN_period*10;
+
+		SLOW_CS_EN_IN <= '1';
 
 		WE_IN <= '0';
 		wait for CLK_IN_period;
@@ -142,6 +145,7 @@ BEGIN
 		WR_CONTINUOUS_IN <= '0';
 		
 		wait for 30 us;
+		SLOW_CS_EN_IN <= '0';
 		
 		RD_IN <= '0';
 		wait for CLK_IN_period;

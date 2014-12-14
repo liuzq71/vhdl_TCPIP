@@ -27,18 +27,23 @@ use IEEE.NUMERIC_STD.ALL;
 --use UNISIM.VComponents.all;
 
 entity spi_mod is
-   Port ( 	CLK_IN 				: in  STD_LOGIC;
-				RST_IN 				: in  STD_LOGIC;
-				WR_CONTINUOUS_IN 	: in  STD_LOGIC;
-				WE_IN 				: in  STD_LOGIC;
-				WR_ADDR_IN			: in 	STD_LOGIC_VECTOR (7 downto 0);
-				WR_DATA_IN 			: in  STD_LOGIC_VECTOR (7 downto 0);
-				WR_DATA_CMPLT_OUT	: out STD_LOGIC;
-				RD_IN					: in	STD_LOGIC;
-				RD_WIDTH_IN 		: in  STD_LOGIC;
-				RD_ADDR_IN 			: in  STD_LOGIC_VECTOR (7 downto 0);
-				RD_DATA_OUT 		: out STD_LOGIC_VECTOR (7 downto 0);
-				RD_DATA_CMPLT_OUT	: out STD_LOGIC;
+   Port ( 	CLK_IN 							: in  STD_LOGIC;
+				RST_IN 							: in  STD_LOGIC;
+				
+				WR_CONTINUOUS_IN 				: in  STD_LOGIC;
+				WE_IN 							: in  STD_LOGIC;
+				WR_ADDR_IN						: in 	STD_LOGIC_VECTOR (7 downto 0);
+				WR_DATA_IN 						: in  STD_LOGIC_VECTOR (7 downto 0);
+				WR_DATA_CMPLT_OUT				: out STD_LOGIC;
+
+				RD_IN								: in	STD_LOGIC;
+				RD_WIDTH_IN 					: in  STD_LOGIC;
+				RD_ADDR_IN 						: in  STD_LOGIC_VECTOR (7 downto 0);
+				RD_DATA_OUT 					: out STD_LOGIC_VECTOR (7 downto 0);
+				RD_DATA_CMPLT_OUT				: out STD_LOGIC;
+				
+				SLOW_CS_EN_IN					: in STD_LOGIC;
+				OPER_CMPLT_POST_CS_OUT 		: out STD_LOGIC;
 				
 				SDI_OUT				: out STD_LOGIC;
 				SDO_IN				: in 	STD_LOGIC;
@@ -58,18 +63,21 @@ constant C_oper_cmplt_init		: unsigned(7 downto 0) := X"00";
 
 signal clk_counter : unsigned(7 downto 0) := C_clk_div;
 signal clk_div, spi_clk, spi_clk_o : std_logic := '0';
-signal cs : std_logic := '1';
+signal cs, cs_p, cs_pp : std_logic := '1';
 signal wr_data_cmplt, rd_data_cmplt : std_logic := '0';
 
 signal wr_bit_counter : unsigned(3 downto 0);
 signal rd_bit_counter : unsigned(7 downto 0);
 
-signal we_ini, we_ini_p, rd_ini, rd_ini_p, doing_wr, doing_rd, operation_cmplt : std_logic := '0';
+signal we_ini, we_ini_p, rd_ini, rd_ini_p, doing_wr, doing_rd : std_logic := '0';
+signal operation_cmplt : std_logic := '0';
+signal operation_cmplt_reg : std_logic_vector(7 downto 0);
 signal wr_data_buf, wr_data_buf2 : std_logic_vector(7 downto 0);
 signal rd_addr_buf, rd_data_buf : std_logic_vector(7 downto 0) := (others => '0');
 signal doing_wr_p, doing_rd_p, load_countinous_wr : std_logic := '0';
 
 signal operation_cmplt_cntr : unsigned(7 downto 0) := C_oper_cmplt_init;
+signal oper_cmplt_post_cs : std_logic := '0';
 
 begin
 
@@ -79,8 +87,10 @@ begin
 
 	WR_DATA_CMPLT_OUT <= wr_data_cmplt;
 	RD_DATA_CMPLT_OUT <= rd_data_cmplt;
+	
+	OPER_CMPLT_POST_CS_OUT <= oper_cmplt_post_cs;
 
-	spi_clk_o <= spi_clk when cs = '0' else C_spi_clk_polarity;
+	spi_clk_o <= spi_clk when (cs = '0' and (doing_wr = '1' or doing_rd = '1'))  else C_spi_clk_polarity;
 
 	process(CLK_IN)
 	begin
@@ -193,6 +203,8 @@ begin
 	process(CLK_IN)
 	begin
 		if rising_edge(CLK_IN) then
+			operation_cmplt_reg(0) <= operation_cmplt;
+			operation_cmplt_reg(7 downto 1) <= operation_cmplt_reg(6 downto 0);
 			if doing_wr = '1' and clk_div = '1' and spi_clk_o = '1' and wr_bit_counter = X"0" and WR_CONTINUOUS_IN = '0' then
 				operation_cmplt <= '1';
 			elsif doing_rd = '1' and clk_div = '1' and spi_clk_o = '1' and rd_bit_counter = X"0" then
@@ -205,12 +217,27 @@ begin
 			else
 				operation_cmplt_cntr <= operation_cmplt_cntr - 1;
 			end if;
-			if doing_wr_p = '0' and doing_wr = '1' then
+			if WE_IN = '1' then
 				cs <= '0';
-			elsif doing_rd_p = '0' and doing_rd = '1' then
+			elsif RD_IN = '1' then
 				cs <= '0';
-			elsif operation_cmplt = '1' then
+			elsif operation_cmplt = '1' and SLOW_CS_EN_IN = '0' then
 				cs <= '1';
+			elsif operation_cmplt_reg(4) = '1' and SLOW_CS_EN_IN = '1' then
+				cs <= '1';
+			end if;
+		end if;
+	end process;
+
+	process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			cs_p <= cs;
+			cs_pp <= cs_p;
+			if cs_pp = '0' and cs_p = '1' then
+				oper_cmplt_post_cs <= '1';
+			else
+				oper_cmplt_post_cs <= '0';
 			end if;
 		end if;
 	end process;

@@ -122,26 +122,6 @@ architecture Behavioral of hw_client is
 				 DATA_B_OUT : out STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0));
 	END COMPONENT;
 
-	COMPONENT spi_mod
-		Port ( 	CLK_IN 				: in  STD_LOGIC;
-					RST_IN 				: in  STD_LOGIC;
-					WR_CONTINUOUS_IN 	: in  STD_LOGIC;
-					WE_IN 				: in  STD_LOGIC;
-					WR_ADDR_IN			: in 	STD_LOGIC_VECTOR (7 downto 0);
-					WR_DATA_IN 			: in  STD_LOGIC_VECTOR (7 downto 0);
-					WR_DATA_CMPLT_OUT	: out STD_LOGIC;
-					RD_IN					: in	STD_LOGIC;
-					RD_WIDTH_IN 		: in  STD_LOGIC;
-					RD_ADDR_IN 			: in  STD_LOGIC_VECTOR (7 downto 0);
-					RD_DATA_OUT 		: out STD_LOGIC_VECTOR (7 downto 0);
-					RD_DATA_CMPLT_OUT	: out STD_LOGIC;
-					
-					SDI_OUT				: out STD_LOGIC;
-					SDO_IN				: in 	STD_LOGIC;
-					SCLK_OUT				: out STD_LOGIC;
-					CS_OUT				: out STD_LOGIC);
-	END COMPONENT;
-
 	COMPONENT led_mod is
     Port ( CLK_IN 				: in  STD_LOGIC;
            LED_STATE_IN 		: in  STD_LOGIC_VECTOR (2 downto 0);
@@ -175,6 +155,31 @@ architecture Behavioral of hw_client is
            SF_STATUS_IN 		: in   STD_LOGIC);
 	END COMPONENT;
 
+	COMPONENT eth_mod is
+    Port ( CLK_IN 	: in  STD_LOGIC;
+           RESET_IN 	: in  STD_LOGIC;
+			  
+			  -- Command interface
+           COMMAND_IN			: in  STD_LOGIC_VECTOR (7 downto 0);
+			  COMMAND_EN_IN		: in 	STD_LOGIC;
+           COMMAND_CMPLT_OUT 	: out STD_LOGIC;
+           ERROR_OUT 			: out  STD_LOGIC_VECTOR (7 downto 0);
+			  DEBUG_IN 				: in STD_LOGIC;
+			  DEBUG_OUT				: out  STD_LOGIC_VECTOR (7 downto 0);
+			  
+           -- Flash mod ctrl interface
+			  FRAME_ADDR_OUT 				: out  STD_LOGIC_VECTOR (23 downto 1);
+           FRAME_DATA_IN 				: in  STD_LOGIC_VECTOR (15 downto 0);
+           FRAME_DATA_RD_OUT 			: out  STD_LOGIC;
+           FRAME_DATA_RD_CMPLT_IN 	: in  STD_LOGIC;
+           
+			  -- Eth SPI interface
+			  SDI_OUT 	: out  STD_LOGIC;
+           SDO_IN 	: in  STD_LOGIC;
+           SCLK_OUT 	: out  STD_LOGIC;
+           CS_OUT 	: out  STD_LOGIC);
+	END COMPONENT;
+
 subtype slv is std_logic_vector;
 
 signal clk_25MHz : std_logic;
@@ -187,13 +192,14 @@ signal r, g, b 					: std_logic := '0';
 signal octl							: std_logic_vector(7 downto 0);
 signal ocrx, ocry 				: std_logic_vector(7 downto 0) := (others => '0');
 
-signal sseg_data : std_logic_vector(15 downto 0) := (others => '0');
+signal frame_addr : std_logic_vector(23 downto 1) := (others => '0');
+signal frame_data : std_logic_vector(15 downto 0) := (others => '0');
+signal frame_rd, frame_rd_cmplt : std_logic := '0';
 
+signal sseg_data : std_logic_vector(15 downto 0) := (others => '0');
 signal debug_we : std_logic := '0';
 signal debug_wr_addr : unsigned(11 downto 0) := (others => '0');
 signal debug_wr_data : std_logic_vector(7 downto 0) := (others => '0');
-
-signal tmp_addr, tmp_data : std_logic_vector(7 downto 0) := (others => '0');
 signal buttons, buttons_prev, buttons_edge	: std_logic_vector(3 downto 0) := (others => '0');
 signal debounce_count								: unsigned(15 downto 0) := (others => '0');
 
@@ -214,15 +220,13 @@ begin
 		VAL_IN 	=> sseg_data,
 		SSEG_OUT	=> SSEG_OUT,
 		AN_OUT   => AN_OUT);
-
-	LED_OUT(7 downto 2) <= "000000";
 	
 	led_mod_inst : led_mod
     Port Map ( CLK_IN 				=> clk_25MHz,
-					LED_STATE_IN 		=> SW_IN(7 downto 5),
-					ERROR_CODE_IN		=> SW_IN(4 downto 0),
-					ERROR_CODE_EN_IN	=> buttons_edge(0),
-					LEDS_OUT 			=> LED_OUT(1 downto 0));
+					LED_STATE_IN 		=> "001",
+					ERROR_CODE_IN		=> "11001",
+					ERROR_CODE_EN_IN	=> '0',
+					LEDS_OUT 			=> open); -- LED_OUT(1 downto 0));
 	
 	process(clk_25MHz)
 	begin
@@ -311,57 +315,50 @@ begin
 				  DATA_B_IN 	=> "00000000",
 				  DATA_B_OUT 	=> open);
 
-------------------------- SPI --------------------------------
+------------------------- Ethernet Config --------------------------------
 
-	process(clk_25MHz)
-	begin
-		if rising_edge(clk_25MHz) then
-			if buttons_edge(2) = '1' then
-				tmp_addr <= SW_IN(7 downto 0);
-			end if;
-			if buttons_edge(3) = '1' then
-				tmp_data <= SW_IN(7 downto 0);
-			end if;
-		end if;
-	end process;
-
-	spi_mod_inst : spi_mod
-		Port Map ( 	CLK_IN 				=> clk_25MHz,
-						RST_IN 				=> '0',
-						WR_CONTINUOUS_IN 	=> '0',
-						WE_IN 				=> buttons_edge(0),
-						WR_ADDR_IN			=> tmp_addr,
-						WR_DATA_IN 			=> tmp_data,
-						WR_DATA_CMPLT_OUT	=> open,
-						RD_IN					=> buttons_edge(1),
-						RD_WIDTH_IN 		=> '0',
-						RD_ADDR_IN 			=> tmp_addr,
-						RD_DATA_OUT 		=> sseg_data(7 downto 0),
-						RD_DATA_CMPLT_OUT	=> open,
-					
-						SDI_OUT				=> SDO,
-						SDO_IN				=> SDI,
-						SCLK_OUT				=> SCLK,
-						CS_OUT				=> CS);
+	eth_mod_inst : eth_mod
+		 Port Map ( CLK_IN 	=> clk_25MHz,
+						RESET_IN => '0',
+				  
+					  -- Command interface
+					  COMMAND_IN			=> SW_IN,
+					  COMMAND_EN_IN		=> buttons_edge(1),
+					  COMMAND_CMPLT_OUT 	=> LED_OUT(1),
+					  ERROR_OUT 			=> open,
+					  DEBUG_IN				=> buttons_edge(2),
+					  DEBUG_OUT				=> sseg_data(7 downto 0),
+					  
+					  -- Flash mod ctrl interface
+					  FRAME_ADDR_OUT 				=> frame_addr,
+					  FRAME_DATA_IN 				=> frame_data,
+					  FRAME_DATA_RD_OUT 			=> frame_rd,
+					  FRAME_DATA_RD_CMPLT_IN 	=> frame_rd_cmplt,
+					  
+					  -- Eth SPI interface
+					  SDI_OUT 	=> SDO,
+					  SDO_IN 	=> SDI,
+					  SCLK_OUT 	=> SCLK,
+					  CS_OUT 	=> CS);
 
 ------------------------- STRATA FLASH --------------------------------
 
-	
+	LED_OUT(7 downto 2) <= (others => '0');
 
 	sf_mod_inst : sf_mod
     Port Map ( 	CLK_IN 				=> clk_25MHz,
 						RESET_IN 			=> '0',
 			  
 					  -- Command interface
-					  INIT_IN 				=> '0',
-					  INIT_CMPLT_OUT		=> open,
+					  INIT_IN 				=> buttons_edge(0),
+					  INIT_CMPLT_OUT		=> LED_OUT(0),
 					  ERROR_OUT				=> open,
 					  
 					  -- Ethernet command interface
-					  ADDR_IN				=> "000"&X"00000",
-					  DATA_OUT 				=> open,
-					  RD_IN					=> '0',
-					  RD_CMPLT_OUT			=> open,
+					  ADDR_IN				=> frame_addr,
+					  DATA_OUT 				=> frame_data,
+					  RD_IN					=> frame_rd,
+					  RD_CMPLT_OUT			=> frame_rd_cmplt,
 					  
 					  -- Flash interface
 					  SF_DATA_IN 			=> SF_DATA,

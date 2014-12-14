@@ -235,8 +235,8 @@ begin
       if rising_edge(CLK_IN) then
 			if sf_state = INIT_CMPLT_ST or sf_state = ERROR_REPORT_STATE then
 				init_cmplt <= '1';
-			else
-				init_cmplt <= '0';
+--			else
+--				init_cmplt <= '0';
 			end if;
 			if init_cmplt = '1' and start_id_correct = '1' and end_id_correct = '1' then
 				init_succeeded <= '1';
