@@ -160,9 +160,10 @@ BEGIN
 		wait for CLK_IN_period;
 		RD_ADDR_IN <= X"62";
 		RD_IN <= '1';
-		RD_WIDTH_IN <= '1';
+		RD_WIDTH_IN <= '0';
 		wait for CLK_IN_period;
 		RD_IN <= '0';
+		RD_WIDTH_IN <= '1';
 	
       wait;
    end process;
