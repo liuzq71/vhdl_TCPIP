@@ -53,6 +53,7 @@ entity hw_client is
 				SDO			: out STD_LOGIC;
 				SCLK 			: out STD_LOGIC;
 				CS				: out STD_LOGIC;
+				INT			: in STD_LOGIC;
 				RESET			: out STD_LOGIC);
 end hw_client;
 
@@ -165,7 +166,7 @@ architecture Behavioral of hw_client is
            COMMAND_CMPLT_OUT 	: out STD_LOGIC;
            ERROR_OUT 			: out  STD_LOGIC_VECTOR (7 downto 0);
 			  DEBUG_IN 				: in STD_LOGIC;
-			  DEBUG_OUT				: out  STD_LOGIC_VECTOR (7 downto 0);
+			  DEBUG_OUT				: out  STD_LOGIC_VECTOR (15 downto 0);
 			  
            -- Flash mod ctrl interface
 			  FRAME_ADDR_OUT 				: out  STD_LOGIC_VECTOR (23 downto 1);
@@ -177,7 +178,8 @@ architecture Behavioral of hw_client is
 			  SDI_OUT 	: out  STD_LOGIC;
            SDO_IN 	: in  STD_LOGIC;
            SCLK_OUT 	: out  STD_LOGIC;
-           CS_OUT 	: out  STD_LOGIC);
+           CS_OUT 	: out  STD_LOGIC;
+			  INT_IN		: in STD_LOGIC);
 	END COMPONENT;
 
 subtype slv is std_logic_vector;
@@ -205,8 +207,7 @@ signal debounce_count								: unsigned(15 downto 0) := (others => '0');
 
 begin
 
-	RESET <= '0';
---	INT <= '1';
+	RESET <= SW_IN(7);
 	
 	clk_mod_Inst : clk_mod
 	PORT MAP ( 	CLK_50MHz_IN 	=> CLK_IN,
@@ -327,7 +328,7 @@ begin
 					  COMMAND_CMPLT_OUT 	=> LED_OUT(1),
 					  ERROR_OUT 			=> open,
 					  DEBUG_IN				=> buttons_edge(2),
-					  DEBUG_OUT				=> sseg_data(7 downto 0),
+					  DEBUG_OUT				=> sseg_data,
 					  
 					  -- Flash mod ctrl interface
 					  FRAME_ADDR_OUT 				=> frame_addr,
@@ -339,7 +340,8 @@ begin
 					  SDI_OUT 	=> SDO,
 					  SDO_IN 	=> SDI,
 					  SCLK_OUT 	=> SCLK,
-					  CS_OUT 	=> CS);
+					  CS_OUT 	=> CS,
+					  INT_IN 	=> INT);
 
 ------------------------- STRATA FLASH --------------------------------
 
