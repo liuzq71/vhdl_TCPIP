@@ -59,7 +59,7 @@ constant C_end_ID				: std_logic_vector(15 downto 0) := X"ED4A";
 
 -- Addresses in Strata Flash
 constant C_start_ID_addr 	: std_logic_vector(23 downto 0) := X"000000";
-constant C_end_ID_addr 		: std_logic_vector(23 downto 0) := X"00003F";
+constant C_end_ID_addr 		: std_logic_vector(23 downto 0) := X"00007F";
 
 signal sf_cs 	: std_logic := '0';
 signal sf_addr : std_logic_vector(23 downto 0);

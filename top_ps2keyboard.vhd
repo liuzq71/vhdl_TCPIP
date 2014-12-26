@@ -327,7 +327,7 @@ begin
 					  COMMAND_EN_IN		=> buttons_edge(1),
 					  COMMAND_CMPLT_OUT 	=> LED_OUT(1),
 					  ERROR_OUT 			=> open,
-					  DEBUG_IN				=> buttons_edge(2),
+					  DEBUG_IN				=> buttons(2),
 					  DEBUG_OUT				=> sseg_data,
 					  
 					  -- Flash mod ctrl interface

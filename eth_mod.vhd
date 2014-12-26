@@ -99,8 +99,12 @@ architecture Behavioral of eth_mod is
 subtype slv is std_logic_vector;
 
 constant C_init_cmnds_start_addr : std_logic_vector(7 downto 0) := X"01";
-constant C_init_cmnds_end_addr 	: std_logic_vector(7 downto 0) := X"30";
+constant C_init_cmnds_max_addr 	: std_logic_vector(7 downto 0) := X"7F";
+constant C_arp_reply_packet_addr : std_logic_vector(7 downto 0) := X"80";
+
 constant C_phy_rd_delay_count 	: std_logic_vector(8 downto 0) := "1"&X"F4";
+
+constant C_ARP_Packet_Type : std_logic_vector(15 downto 0) := X"0806";
 
 signal spi_we, spi_wr_continuous, spi_wr_cmplt : std_logic := '0';
 signal spi_rd, spi_rd_width, spi_rd_cmplt, spi_oper_cmplt : std_logic := '0';
@@ -123,9 +127,20 @@ signal next_packet_pointer			: std_logic_vector(15 downto 0) := (others => '0');
 signal previous_packet_pointer	: unsigned(15 downto 0) := (others => '0');
 signal eir_register					: std_logic_vector(7 downto 0) := (others => '0');
 
-signal rx_packet_ram_we : std_logic := '0';
-signal rx_packet_ram_we_addr, rx_packet_ram_rd_addr : unsigned(10 downto 0);
+signal rx_packet_ram_we, handle_rx_packet, rx_packet_handled : std_logic := '0';
+signal rx_packet_ram_we_addr, rx_packet_ram_rd_addr : unsigned(10 downto 0) := (others => '0');
 signal rx_packet_rd_data : std_logic_vector(7 downto 0);
+signal rx_packet_status_vector, arp_target_ip_addr, arp_source_ip_addr : std_logic_vector(31 downto 0);
+signal rx_packet_type 			: std_logic_vector(15 downto 0);
+signal rx_packet_source_mac 	: std_logic_vector(47 downto 0);
+signal send_arp_reply : std_logic := '0';
+
+signal tx_packet_ram_we : std_logic := '0';
+signal tx_packet_ram_we_addr, tx_packet_ram_rd_addr : unsigned(10 downto 0) := (others => '0');
+signal tx_packet_rd_data, tx_packet_ram_data : std_logic_vector(7 downto 0);
+
+signal ip_addr  : std_logic_vector(31 downto 0) := X"0A0A0666"; 		-- 10.10.6.102
+signal mac_addr : std_logic_vector(47 downto 0) := X"8066F23D547A";
 
 type ETH_ST is (	IDLE,
 						PARSE_COMMAND,
@@ -184,28 +199,62 @@ type ETH_ST is (	IDLE,
 						HANDLE_RX_INTERRUPT15,
 						HANDLE_RX_INTERRUPT16,
 						HANDLE_RX_INTERRUPT17,
-						HANDLE_RX_PACKET0,
-						HANDLE_RX_PACKET1,
-						HANDLE_RX_PACKET2,
-						HANDLE_RX_PACKET3,
-						HANDLE_RX_PACKET4
+						COPY_RX_PACKET_TO_BUF0,
+						COPY_RX_PACKET_TO_BUF1,
+						COPY_RX_PACKET_TO_BUF2,
+						COPY_RX_PACKET_TO_BUF3,
+						COPY_RX_PACKET_TO_BUF4,
+						COPY_RX_PACKET_TO_BUF5,
+						COPY_RX_PACKET_TO_BUF6
 						);
 
 signal eth_state, eth_next_state : ETH_ST := IDLE;
 signal state_debug_sig : unsigned(7 downto 0);
 
-begin
+type PACKET_HANDLER_ST is (	IDLE,
+										CHECK_PACKET_VERACITY0,
+										CHECK_PACKET_VERACITY1,
+										CHECK_PACKET_VERACITY2,
+										CHECK_PACKET_VERACITY3,
+										CHECK_PACKET_VERACITY4,
+										CHECK_PACKET_VERACITY5,
+										CHECK_PACKET_VERACITY6,
+										PARSE_SOURCE_MAC0,
+										PARSE_SOURCE_MAC1,
+										PARSE_SOURCE_MAC2,
+										PARSE_SOURCE_MAC3,
+										PARSE_SOURCE_MAC4,
+										PARSE_SOURCE_MAC5,
+										PARSE_SOURCE_MAC6,
+										PARSE_SOURCE_MAC7,
+										PARSE_PACKET_TYPE0,
+										PARSE_PACKET_TYPE1,
+										PARSE_PACKET_TYPE2,
+										PARSE_PACKET_TYPE3,
+										PARSE_PACKET_TYPE4,
+										HANDLE_ARP_REQUEST0,
+										HANDLE_ARP_REQUEST1,
+										HANDLE_ARP_REQUEST2,
+										HANDLE_ARP_REQUEST3,
+										HANDLE_ARP_REQUEST4,
+										HANDLE_ARP_REQUEST5,
+										HANDLE_ARP_REQUEST6,
+										HANDLE_ARP_REQUEST7,
+										HANDLE_ARP_REQUEST8,
+										HANDLE_ARP_REQUEST9,
+										HANDLE_ARP_REQUEST10,
+										HANDLE_ARP_REQUEST11,
+										HANDLE_ARP_REQUEST12,
+										HANDLE_ARP_REQUEST13,
+										TRIGGER_ARP_REPLY,
+										COMPLETE
+									);
+										
+signal packet_handler_state, packet_handler_next_state : PACKET_HANDLER_ST := IDLE;					
 
-	process(CLK_IN)
-	begin
-		if rising_edge(CLK_IN) then
-			if DEBUG_IN = '1' then
-				rx_packet_ram_rd_addr <= rx_packet_ram_rd_addr + 1;
-			end if;
-		end if;
-	end process;
+begin
 	
-	DEBUG_OUT(15 downto 8) <= X"00";
+	--DEBUG_OUT(15 downto 8) <= X"00";
 	--DEBUG_OUT(7 downto 0) <= slv(init_cmnd_addr);
 	--DEBUG_OUT(7 downto 0) <= slv(state_debug_sig);
 	--DEBUG_OUT(7 downto 0) <= enc28j60_version;
@@ -213,7 +262,12 @@ begin
 	--DEBUG_OUT(7 downto 0) <= slv(interrupt_counter);
 	--DEBUG_OUT <= spi_wr_addr & spi_wr_data;
 	--DEBUG_OUT <= next_packet_pointer;
-	DEBUG_OUT(7 downto 0) <= rx_packet_rd_data;
+	--DEBUG_OUT <= rx_packet_status_vector(15 downto 0) when DEBUG_IN = '0' else rx_packet_status_vector(31 downto 16);
+	--DEBUG_OUT <= rx_packet_source_mac(15 downto 0) when DEBUG_IN = '0' else rx_packet_source_mac(31 downto 16);
+	--DEBUG_OUT <= arp_target_ip_addr(15 downto 0) when DEBUG_IN = '0' else arp_target_ip_addr(31 downto 16);
+	DEBUG_OUT <= arp_source_ip_addr(15 downto 0) when DEBUG_IN = '0' else arp_source_ip_addr(31 downto 16);
+	--DEBUG_OUT(7 downto 0) <= rx_packet_rd_data;
+	--DEBUG_OUT <= rx_packet_type;
 	
 --	debug_state: process(CLK_IN)
 --	begin
@@ -258,7 +312,7 @@ begin
    end process;
 
 	NEXT_STATE_DECODE: process (eth_state, COMMAND_IN, COMMAND_EN_IN, init_cmnd_addr, 
-											phy_rd_counter, init_cmnd_addr, int_waiting)
+											phy_rd_counter, int_waiting, frame_data)
    begin
       eth_next_state <= eth_state;  --default is to stay in current state
       case (eth_state) is
@@ -280,13 +334,18 @@ begin
 				else
 					eth_next_state <= IDLE;
 				end if;
+				
 			when HANDLE_INIT_CMND0 =>
 				eth_next_state <= HANDLE_INIT_CMND1;
 			when HANDLE_INIT_CMND1 =>
 				eth_next_state <= HANDLE_INIT_CMND2;
 			when HANDLE_INIT_CMND2 =>
 				if frame_rd_cmplt = '1' then
-					eth_next_state <= HANDLE_INIT_CMND3;
+					if frame_data = X"0000" then
+						eth_next_state <= IDLE;
+					else
+						eth_next_state <= HANDLE_INIT_CMND3;
+					end if;
 				end if;
 			when HANDLE_INIT_CMND3 =>
 				eth_next_state <= HANDLE_INIT_CMND4;
@@ -295,11 +354,12 @@ begin
 					eth_next_state <= HANDLE_INIT_CMND5;
 				end if;
 			when HANDLE_INIT_CMND5 =>
-				if init_cmnd_addr > unsigned(C_init_cmnds_end_addr) then
+				if slv(init_cmnd_addr) = C_init_cmnds_max_addr then
 					eth_next_state <= IDLE;
 				else
 					eth_next_state <= HANDLE_INIT_CMND1;
 				end if;
+				
 			when READ_VERSION0 =>
 				eth_next_state <= READ_VERSION1;
 			when READ_VERSION1 =>
@@ -395,23 +455,29 @@ begin
 					eth_next_state <= HANDLE_RX_INTERRUPT4;
 				end if;
 			when HANDLE_RX_INTERRUPT4 =>
-				eth_next_state <= HANDLE_RX_PACKET0;
+				eth_next_state <= COPY_RX_PACKET_TO_BUF0;
 			
-			when HANDLE_RX_PACKET0 =>
-				eth_next_state <= HANDLE_RX_PACKET1;
-			when HANDLE_RX_PACKET1 =>
-				eth_next_state <= HANDLE_RX_PACKET2;
-			when HANDLE_RX_PACKET2 =>
+			when COPY_RX_PACKET_TO_BUF0 =>
+				eth_next_state <= COPY_RX_PACKET_TO_BUF1;
+			when COPY_RX_PACKET_TO_BUF1 =>
+				eth_next_state <= COPY_RX_PACKET_TO_BUF2;
+			when COPY_RX_PACKET_TO_BUF2 =>
 				if spi_oper_cmplt = '1' then
-					eth_next_state <= HANDLE_RX_PACKET3;
+					eth_next_state <= COPY_RX_PACKET_TO_BUF3;
 				end if;
-			when HANDLE_RX_PACKET3 =>
-				eth_next_state <= HANDLE_RX_PACKET4;
-			when HANDLE_RX_PACKET4 =>
+			when COPY_RX_PACKET_TO_BUF3 =>
+				eth_next_state <= COPY_RX_PACKET_TO_BUF4;
+			when COPY_RX_PACKET_TO_BUF4 =>
 				if slv(previous_packet_pointer) = next_packet_pointer then
-					eth_next_state <= HANDLE_RX_INTERRUPT5;
+					eth_next_state <= COPY_RX_PACKET_TO_BUF5;
 				else
-					eth_next_state <= HANDLE_RX_PACKET1;
+					eth_next_state <= COPY_RX_PACKET_TO_BUF1;
+				end if;
+			when COPY_RX_PACKET_TO_BUF5 =>
+				eth_next_state <= COPY_RX_PACKET_TO_BUF6;
+			when COPY_RX_PACKET_TO_BUF6 =>
+				if rx_packet_handled = '1' then
+					eth_next_state <= HANDLE_RX_INTERRUPT5;
 				end if;
 			
 			when HANDLE_RX_INTERRUPT5 =>
@@ -652,7 +718,7 @@ begin
 				spi_rd_addr <= X"3A";
 			elsif eth_state = HANDLE_RX_INTERRUPT2 then
 				spi_rd_addr <= X"3A";
-			elsif eth_state = HANDLE_RX_PACKET1 then
+			elsif eth_state = COPY_RX_PACKET_TO_BUF1 then
 				spi_rd_addr <= X"3A";
 			end if;
       end if;
@@ -673,7 +739,7 @@ begin
 				spi_rd <= '1';
 			elsif eth_state = HANDLE_RX_INTERRUPT2 then
 				spi_rd <= '1';
-			elsif eth_state = HANDLE_RX_PACKET1 then
+			elsif eth_state = COPY_RX_PACKET_TO_BUF1 then
 				spi_rd <= '1';
 			else
 				spi_rd <= '0';
@@ -746,23 +812,25 @@ begin
 
 ------------------------- RX PACKET --------------------------------
 
+	handle_rx_packet <= '1' when eth_state = COPY_RX_PACKET_TO_BUF5 else '0';
+
 	RX_PACKET_WR_ADDR: process(CLK_IN)
    begin
       if rising_edge(CLK_IN) then
-			if eth_state = HANDLE_RX_PACKET0 then
+			if eth_state = COPY_RX_PACKET_TO_BUF0 then
 				rx_packet_ram_we_addr <= "00000000000";
-			elsif eth_state = HANDLE_RX_PACKET3 then
+			elsif eth_state = COPY_RX_PACKET_TO_BUF3 then
 				rx_packet_ram_we_addr <= rx_packet_ram_we_addr + 1;
 			end if;
 			if eth_state = HANDLE_RX_INTERRUPT5 then
 				previous_packet_pointer <= unsigned(next_packet_pointer);
-			elsif eth_state = HANDLE_RX_PACKET3 then
+			elsif eth_state = COPY_RX_PACKET_TO_BUF3 then
 				previous_packet_pointer <= previous_packet_pointer + 1;
 			end if;
 		end if;
 	end process;
 
-	rx_packet_ram_we <= '1' when eth_state = HANDLE_RX_PACKET3 else '0';
+	rx_packet_ram_we <= '1' when eth_state = COPY_RX_PACKET_TO_BUF3 else '0';
 
 	RX_PACKET_RAM : TDP_RAM
 		Generic Map (	G_DATA_A_SIZE 	=> spi_data_rd'length,
@@ -779,6 +847,224 @@ begin
 				 ADDR_B_IN 		=> slv(rx_packet_ram_rd_addr),
 				 DATA_B_IN 		=> X"00",
 				 DATA_B_OUT 	=> rx_packet_rd_data);
+
+	PH_SYNC_PROC: process(CLK_IN)
+   begin
+      if rising_edge(CLK_IN) then
+			packet_handler_state <= packet_handler_next_state;
+      end if;
+   end process;
+
+	rx_packet_handled <= '1' when packet_handler_state = COMPLETE else '0';
+	send_arp_reply <= '1' when packet_handler_state = TRIGGER_ARP_REPLY else '0';
+
+	PH_NEXT_STATE_DECODE: process (packet_handler_state)
+   begin
+      packet_handler_next_state <= packet_handler_state;  --default is to stay in current state
+      case (packet_handler_state) is
+         when IDLE =>
+				if handle_rx_packet = '1' then
+					packet_handler_next_state <= CHECK_PACKET_VERACITY0;
+				end if;
+			when CHECK_PACKET_VERACITY0 =>
+				packet_handler_next_state <= CHECK_PACKET_VERACITY1;
+			when CHECK_PACKET_VERACITY1 =>
+				packet_handler_next_state <= CHECK_PACKET_VERACITY2;
+			when CHECK_PACKET_VERACITY2 =>
+				packet_handler_next_state <= CHECK_PACKET_VERACITY3;
+			when CHECK_PACKET_VERACITY3 =>
+				packet_handler_next_state <= CHECK_PACKET_VERACITY4;
+			when CHECK_PACKET_VERACITY4 =>
+				packet_handler_next_state <= CHECK_PACKET_VERACITY5;
+			when CHECK_PACKET_VERACITY5 =>
+				packet_handler_next_state <= CHECK_PACKET_VERACITY6;
+			when CHECK_PACKET_VERACITY6 =>
+				if rx_packet_status_vector(23) = '1' then
+					packet_handler_next_state <= PARSE_SOURCE_MAC0;
+				else
+					packet_handler_next_state <= COMPLETE;
+				end if;
+			when PARSE_SOURCE_MAC0 =>
+				packet_handler_next_state <= PARSE_SOURCE_MAC1;
+			when PARSE_SOURCE_MAC1 =>
+				packet_handler_next_state <= PARSE_SOURCE_MAC2;
+			when PARSE_SOURCE_MAC2 =>
+				packet_handler_next_state <= PARSE_SOURCE_MAC3;
+			when PARSE_SOURCE_MAC3 =>
+				packet_handler_next_state <= PARSE_SOURCE_MAC4;
+			when PARSE_SOURCE_MAC4 =>
+				packet_handler_next_state <= PARSE_SOURCE_MAC5;
+			when PARSE_SOURCE_MAC5 =>
+				packet_handler_next_state <= PARSE_SOURCE_MAC6;
+			when PARSE_SOURCE_MAC6 =>
+				packet_handler_next_state <= PARSE_SOURCE_MAC7;
+			when PARSE_SOURCE_MAC7 =>
+				packet_handler_next_state <= PARSE_PACKET_TYPE0;
+			when PARSE_PACKET_TYPE0 =>
+				packet_handler_next_state <= PARSE_PACKET_TYPE1;
+			when PARSE_PACKET_TYPE1 =>
+				packet_handler_next_state <= PARSE_PACKET_TYPE2;
+			when PARSE_PACKET_TYPE2 =>
+				packet_handler_next_state <= PARSE_PACKET_TYPE3;
+			when PARSE_PACKET_TYPE3 =>
+				packet_handler_next_state <= PARSE_PACKET_TYPE4;
+			when PARSE_PACKET_TYPE4 =>
+				if rx_packet_type = C_ARP_Packet_Type then
+					packet_handler_next_state <= HANDLE_ARP_REQUEST0;
+				else
+					packet_handler_next_state <= COMPLETE;
+				end if;
+				
+			when HANDLE_ARP_REQUEST0 =>
+				packet_handler_next_state <= HANDLE_ARP_REQUEST1;
+			when HANDLE_ARP_REQUEST1 =>
+				packet_handler_next_state <= HANDLE_ARP_REQUEST2;
+			when HANDLE_ARP_REQUEST2 =>
+				packet_handler_next_state <= HANDLE_ARP_REQUEST3;
+			when HANDLE_ARP_REQUEST3 =>
+				packet_handler_next_state <= HANDLE_ARP_REQUEST4;
+			when HANDLE_ARP_REQUEST4 =>
+				packet_handler_next_state <= HANDLE_ARP_REQUEST5;
+			when HANDLE_ARP_REQUEST5 =>
+				packet_handler_next_state <= HANDLE_ARP_REQUEST6;
+			when HANDLE_ARP_REQUEST6 =>
+				if arp_target_ip_addr = ip_addr then
+					packet_handler_next_state <= HANDLE_ARP_REQUEST7;
+				else
+					packet_handler_next_state <= COMPLETE;
+				end if;
+			when HANDLE_ARP_REQUEST7 =>
+				packet_handler_next_state <= HANDLE_ARP_REQUEST8;
+			when HANDLE_ARP_REQUEST8 =>
+				packet_handler_next_state <= HANDLE_ARP_REQUEST9;
+			when HANDLE_ARP_REQUEST9 =>
+				packet_handler_next_state <= HANDLE_ARP_REQUEST10;
+			when HANDLE_ARP_REQUEST10 =>
+				packet_handler_next_state <= HANDLE_ARP_REQUEST11;
+			when HANDLE_ARP_REQUEST11 =>
+				packet_handler_next_state <= HANDLE_ARP_REQUEST12;
+			when HANDLE_ARP_REQUEST12 =>
+				packet_handler_next_state <= HANDLE_ARP_REQUEST13;
+			when HANDLE_ARP_REQUEST13 =>
+				packet_handler_next_state <= TRIGGER_ARP_REPLY;
+				
+			when TRIGGER_ARP_REPLY =>
+				packet_handler_next_state <= COMPLETE;
+			
+			when COMPLETE =>
+				packet_handler_next_state <= IDLE;
+		end case;
+	end process;
+
+	RX_PACKET_RD_ADDR: process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			if packet_handler_state = CHECK_PACKET_VERACITY0 then
+				rx_packet_ram_rd_addr <= "000"&X"00";
+			elsif packet_handler_state = CHECK_PACKET_VERACITY1 then
+				rx_packet_ram_rd_addr <= "000"&X"01";
+			elsif packet_handler_state = CHECK_PACKET_VERACITY2 then
+				rx_packet_ram_rd_addr <= "000"&X"02";
+			elsif packet_handler_state = CHECK_PACKET_VERACITY3 then
+				rx_packet_ram_rd_addr <= "000"&X"03";
+			elsif packet_handler_state = PARSE_SOURCE_MAC0 then
+				rx_packet_ram_rd_addr <= "000"&X"0A";
+			elsif packet_handler_state = PARSE_SOURCE_MAC1 then
+				rx_packet_ram_rd_addr <= "000"&X"0B";
+			elsif packet_handler_state = PARSE_SOURCE_MAC2 then
+				rx_packet_ram_rd_addr <= "000"&X"0C";
+			elsif packet_handler_state = PARSE_SOURCE_MAC3 then
+				rx_packet_ram_rd_addr <= "000"&X"0D";
+			elsif packet_handler_state = PARSE_SOURCE_MAC4 then
+				rx_packet_ram_rd_addr <= "000"&X"0E";
+			elsif packet_handler_state = PARSE_SOURCE_MAC5 then
+				rx_packet_ram_rd_addr <= "000"&X"0F";
+			elsif packet_handler_state = PARSE_PACKET_TYPE0 then
+				rx_packet_ram_rd_addr <= "000"&X"10";
+			elsif packet_handler_state = PARSE_PACKET_TYPE1 then
+				rx_packet_ram_rd_addr <= "000"&X"11";
+			elsif packet_handler_state = HANDLE_ARP_REQUEST0 then
+				rx_packet_ram_rd_addr <= "000"&X"2A";
+			elsif packet_handler_state = HANDLE_ARP_REQUEST1 then
+				rx_packet_ram_rd_addr <= "000"&X"2B";
+			elsif packet_handler_state = HANDLE_ARP_REQUEST2 then
+				rx_packet_ram_rd_addr <= "000"&X"2C";
+			elsif packet_handler_state = HANDLE_ARP_REQUEST3 then
+				rx_packet_ram_rd_addr <= "000"&X"2D";
+			elsif packet_handler_state = HANDLE_ARP_REQUEST7 then
+				rx_packet_ram_rd_addr <= "000"&X"20";
+			elsif packet_handler_state = HANDLE_ARP_REQUEST8 then
+				rx_packet_ram_rd_addr <= "000"&X"21";
+			elsif packet_handler_state = HANDLE_ARP_REQUEST9 then
+				rx_packet_ram_rd_addr <= "000"&X"22";
+			elsif packet_handler_state = HANDLE_ARP_REQUEST10 then
+				rx_packet_ram_rd_addr <= "000"&X"23";
+			end if;
+			if packet_handler_state = HANDLE_ARP_REQUEST9 then
+				arp_source_ip_addr(31 downto 24) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_ARP_REQUEST10 then
+				arp_source_ip_addr(23 downto 16) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_ARP_REQUEST11 then
+				arp_source_ip_addr(15 downto 8) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_ARP_REQUEST12 then
+				arp_source_ip_addr(7 downto 0) <= rx_packet_rd_data;
+			end if;
+			if packet_handler_state = HANDLE_ARP_REQUEST2 then
+				arp_target_ip_addr(31 downto 24) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_ARP_REQUEST3 then
+				arp_target_ip_addr(23 downto 16) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_ARP_REQUEST4 then
+				arp_target_ip_addr(15 downto 8) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_ARP_REQUEST5 then
+				arp_target_ip_addr(7 downto 0) <= rx_packet_rd_data;
+			end if;
+			if packet_handler_state = CHECK_PACKET_VERACITY2 then
+				rx_packet_status_vector(7 downto 0) <= rx_packet_rd_data;
+			elsif packet_handler_state = CHECK_PACKET_VERACITY3 then
+				rx_packet_status_vector(15 downto 8) <= rx_packet_rd_data;
+			elsif packet_handler_state = CHECK_PACKET_VERACITY4 then
+				rx_packet_status_vector(23 downto 16) <= rx_packet_rd_data;
+			elsif packet_handler_state = CHECK_PACKET_VERACITY5 then
+				rx_packet_status_vector(31 downto 24) <= rx_packet_rd_data;
+			end if;
+			if packet_handler_state = PARSE_SOURCE_MAC2 then
+				rx_packet_source_mac(47 downto 40) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_SOURCE_MAC3 then
+				rx_packet_source_mac(39 downto 32) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_SOURCE_MAC4 then
+				rx_packet_source_mac(31 downto 24) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_SOURCE_MAC5 then
+				rx_packet_source_mac(23 downto 16) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_SOURCE_MAC6 then
+				rx_packet_source_mac(15 downto 8) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_SOURCE_MAC7 then
+				rx_packet_source_mac(7 downto 0) <= rx_packet_rd_data;
+			end if;
+			if packet_handler_state = PARSE_PACKET_TYPE2 then
+				rx_packet_type(15 downto 8) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_PACKET_TYPE3 then
+				rx_packet_type(7 downto 0) <= rx_packet_rd_data;
+			end if;
+		end if;
+	end process;
+
+--------------------- TX PACKET ------------------------------
+
+	TX_PACKET_RAM : TDP_RAM
+		Generic Map (	G_DATA_A_SIZE 	=> tx_packet_ram_data'length,
+							G_ADDR_A_SIZE	=> tx_packet_ram_we_addr'length,
+							G_RELATION		=> 0, --log2(SIZE_A/SIZE_B)
+							G_INIT_FILE		=> "")
+		Port Map ( CLK_A_IN 	=> CLK_IN,
+				 WE_A_IN 		=> tx_packet_ram_we,
+				 ADDR_A_IN 		=> slv(tx_packet_ram_we_addr),
+				 DATA_A_IN		=> tx_packet_ram_data,
+				 DATA_A_OUT		=> open,
+				 CLK_B_IN 		=> CLK_IN,
+				 WE_B_IN 		=> '0',
+				 ADDR_B_IN 		=> slv(tx_packet_ram_rd_addr),
+				 DATA_B_IN 		=> X"00",
+				 DATA_B_OUT 	=> tx_packet_rd_data);
 
 ------------------------- SPI --------------------------------
 
