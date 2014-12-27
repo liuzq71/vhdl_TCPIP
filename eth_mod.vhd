@@ -100,7 +100,9 @@ subtype slv is std_logic_vector;
 
 constant C_init_cmnds_start_addr : std_logic_vector(7 downto 0) := X"01";
 constant C_init_cmnds_max_addr 	: std_logic_vector(7 downto 0) := X"7F";
-constant C_arp_reply_packet_addr : std_logic_vector(7 downto 0) := X"80";
+constant C_arp_reply_frame_addr 	: std_logic_vector(19 downto 0) := X"00080";
+
+constant C_arp_reply_length 	: std_logic_vector(15 downto 0) := X"002A";
 
 constant C_phy_rd_delay_count 	: std_logic_vector(8 downto 0) := "1"&X"F4";
 
@@ -135,12 +137,18 @@ signal rx_packet_type 			: std_logic_vector(15 downto 0);
 signal rx_packet_source_mac 	: std_logic_vector(47 downto 0);
 signal send_arp_reply : std_logic := '0';
 
-signal tx_packet_ram_we : std_logic := '0';
+signal tx_packet_ram_we, tx_packet_config_cmplt : std_logic := '0';
 signal tx_packet_ram_we_addr, tx_packet_ram_rd_addr : unsigned(10 downto 0) := (others => '0');
 signal tx_packet_rd_data, tx_packet_ram_data : std_logic_vector(7 downto 0);
 
 signal ip_addr  : std_logic_vector(31 downto 0) := X"0A0A0666"; 		-- 10.10.6.102
 signal mac_addr : std_logic_vector(47 downto 0) := X"8066F23D547A";
+
+signal tx_packet_frame_addr :unsigned(19 downto 0);
+signal tx_packet_length, tx_packet_length_counter, tx_packet_end_pointer :unsigned(15 downto 0);
+signal doing_tx_packet_config, tx_packet_frame_data_rd : std_logic := '0';
+signal packet_instruction, packet_data : std_logic_vector(7 downto 0);
+signal tx_packet_ready_from_transmission : std_logic := '0';
 
 type ETH_ST is (	IDLE,
 						PARSE_COMMAND,
@@ -205,7 +213,27 @@ type ETH_ST is (	IDLE,
 						COPY_RX_PACKET_TO_BUF3,
 						COPY_RX_PACKET_TO_BUF4,
 						COPY_RX_PACKET_TO_BUF5,
-						COPY_RX_PACKET_TO_BUF6
+						COPY_RX_PACKET_TO_BUF6,
+						PRE_TX_TRANSMIT0,
+						PRE_TX_TRANSMIT1,
+						HANDLE_TX_TRANSMIT0,
+						HANDLE_TX_TRANSMIT1,
+						HANDLE_TX_TRANSMIT2,
+						HANDLE_TX_TRANSMIT3,
+						HANDLE_TX_TRANSMIT4,
+						HANDLE_TX_TRANSMIT5,
+						HANDLE_TX_TRANSMIT6,
+						HANDLE_TX_TRANSMIT7,
+						HANDLE_TX_TRANSMIT8,
+						HANDLE_TX_TRANSMIT9,
+						HANDLE_TX_TRANSMIT10,
+						HANDLE_TX_TRANSMIT11,
+						HANDLE_TX_TRANSMIT12,
+						HANDLE_TX_TRANSMIT13,
+						HANDLE_TX_TRANSMIT14,
+						HANDLE_TX_TRANSMIT15,
+						HANDLE_TX_TRANSMIT16,
+						HANDLE_TX_TRANSMIT17
 						);
 
 signal eth_state, eth_next_state : ETH_ST := IDLE;
@@ -252,9 +280,20 @@ type PACKET_HANDLER_ST is (	IDLE,
 										
 signal packet_handler_state, packet_handler_next_state : PACKET_HANDLER_ST := IDLE;					
 
+type TX_PACKET_CONFIG_ST is (	IDLE,
+										INIT_ARP_REPLY_METADATA,
+										READ_PACKET_BYTE0,
+										READ_PACKET_BYTE1,
+										HANDLE_PACKET_INSTRUCTION0,
+										HANDLE_PACKET_INSTRUCTION1,
+										COMPLETE
+									);
+										
+signal tx_packet_state, tx_packet_next_state : TX_PACKET_CONFIG_ST := IDLE;
+
 begin
 	
-	--DEBUG_OUT(15 downto 8) <= X"00";
+	DEBUG_OUT(15 downto 8) <= X"00";
 	--DEBUG_OUT(7 downto 0) <= slv(init_cmnd_addr);
 	--DEBUG_OUT(7 downto 0) <= slv(state_debug_sig);
 	--DEBUG_OUT(7 downto 0) <= enc28j60_version;
@@ -265,9 +304,11 @@ begin
 	--DEBUG_OUT <= rx_packet_status_vector(15 downto 0) when DEBUG_IN = '0' else rx_packet_status_vector(31 downto 16);
 	--DEBUG_OUT <= rx_packet_source_mac(15 downto 0) when DEBUG_IN = '0' else rx_packet_source_mac(31 downto 16);
 	--DEBUG_OUT <= arp_target_ip_addr(15 downto 0) when DEBUG_IN = '0' else arp_target_ip_addr(31 downto 16);
-	DEBUG_OUT <= arp_source_ip_addr(15 downto 0) when DEBUG_IN = '0' else arp_source_ip_addr(31 downto 16);
+	--DEBUG_OUT <= arp_source_ip_addr(15 downto 0) when DEBUG_IN = '0' else arp_source_ip_addr(31 downto 16);
 	--DEBUG_OUT(7 downto 0) <= rx_packet_rd_data;
+	DEBUG_OUT(7 downto 0) <= tx_packet_rd_data;
 	--DEBUG_OUT <= rx_packet_type;
+	--DEBUG_OUT <= slv(tx_packet_end_pointer);
 	
 --	debug_state: process(CLK_IN)
 --	begin
@@ -297,9 +338,10 @@ begin
 
 	COMMAND_CMPLT_OUT <= command_cmplt;
 	
-	FRAME_ADDR_OUT(23 downto 1) <= frame_addr(22 downto 0);
+	FRAME_ADDR_OUT(23 downto 1) <= frame_addr(22 downto 0) when doing_tx_packet_config = '0' else slv("000"&tx_packet_frame_addr);
+	FRAME_DATA_RD_OUT <= frame_data_rd when doing_tx_packet_config = '0' else tx_packet_frame_data_rd;
+	
 	frame_data <= FRAME_DATA_IN;
-	FRAME_DATA_RD_OUT <= frame_data_rd;
 	frame_rd_cmplt <= FRAME_DATA_RD_CMPLT_IN;
 
 	---- HANDLE COMMANDS ----
@@ -312,14 +354,18 @@ begin
    end process;
 
 	NEXT_STATE_DECODE: process (eth_state, COMMAND_IN, COMMAND_EN_IN, init_cmnd_addr, 
-											phy_rd_counter, int_waiting, frame_data)
+											phy_rd_counter, int_waiting, frame_data, tx_packet_ready_from_transmission)
    begin
       eth_next_state <= eth_state;  --default is to stay in current state
       case (eth_state) is
          when IDLE =>
 				if COMMAND_EN_IN = '1' then
 					eth_next_state <= PARSE_COMMAND;
-				elsif int_waiting = '1' then
+				elsif int_waiting = '1' and tx_packet_ready_from_transmission = '1' then
+					eth_next_state <= PRE_TX_TRANSMIT0;
+				elsif int_waiting = '0' and tx_packet_ready_from_transmission = '1' then
+					eth_next_state <= PRE_TX_TRANSMIT0;
+				elsif int_waiting = '1' and tx_packet_ready_from_transmission = '0' then
 					eth_next_state <= SERVICE_INTERRUPT0;
 				end if;
 			when PARSE_COMMAND =>
@@ -527,7 +573,88 @@ begin
 				end if;
 			when SERVICE_INTERRUPT8 =>
 				eth_next_state <= IDLE;
+
+			when PRE_TX_TRANSMIT0 =>
+				eth_next_state <= PRE_TX_TRANSMIT1;
+			when PRE_TX_TRANSMIT1 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT0;
+				end if;
+			when HANDLE_TX_TRANSMIT0 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT1;
+			when HANDLE_TX_TRANSMIT1 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT2;
+				end if;
+			when HANDLE_TX_TRANSMIT2 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT3;
+			when HANDLE_TX_TRANSMIT3 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT4;
+				end if;
+			when HANDLE_TX_TRANSMIT4 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT5;
+			when HANDLE_TX_TRANSMIT5 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT6;
+				end if;
+			when HANDLE_TX_TRANSMIT6 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT7;
+			when HANDLE_TX_TRANSMIT7 =>
+				if tx_packet_length_counter = X"0000" then
+					eth_next_state <= HANDLE_TX_TRANSMIT11;
+				else
+					eth_next_state <= HANDLE_TX_TRANSMIT8;
+				end if;
+			when HANDLE_TX_TRANSMIT8 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT9;
+			when HANDLE_TX_TRANSMIT9 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT10;
+				end if;
+			when HANDLE_TX_TRANSMIT10 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT6;
+			when HANDLE_TX_TRANSMIT11 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT12;
+			when HANDLE_TX_TRANSMIT12 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT13;
+				end if;
+			when HANDLE_TX_TRANSMIT13 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT14;
+			when HANDLE_TX_TRANSMIT14 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT15;
+				end if;
+			when HANDLE_TX_TRANSMIT15 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT16;
+			when HANDLE_TX_TRANSMIT16 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT17;
+				end if;
+			when HANDLE_TX_TRANSMIT17 =>
+				eth_next_state <= IDLE;
+				
 		end case;
+	end process;
+	
+	TX_PACKET_LENGTH_PROC :process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			if eth_state = HANDLE_TX_TRANSMIT5 then
+				tx_packet_length_counter <= tx_packet_length;
+			elsif eth_state = HANDLE_TX_TRANSMIT10 then
+				tx_packet_length_counter <= tx_packet_length_counter - 1;
+			end if;
+			if eth_state = HANDLE_TX_TRANSMIT5 then
+				tx_packet_ram_rd_addr <= "00000000000";
+			elsif eth_state = HANDLE_TX_TRANSMIT10 then
+				tx_packet_ram_rd_addr <= tx_packet_ram_rd_addr + 1;
+			end if;
+--			if DEBUG_IN = '1' then
+--				tx_packet_ram_rd_addr <= tx_packet_ram_rd_addr + 1;
+--			end if;
+		end if;
 	end process;
 	
    INIT_ADDR_PROC: process(CLK_IN)
@@ -605,6 +732,22 @@ begin
 				spi_we <= '1';
 			elsif eth_state = HANDLE_RX_INTERRUPT15 then
 				spi_we <= '1';
+			elsif eth_state = PRE_TX_TRANSMIT0 then
+				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT0 then
+				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT2 then
+				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT4 then
+				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT8 then
+				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT11 then
+				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT13 then
+				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT15 then
+				spi_we <= '1';
 			else
 				spi_we <= '0';
 			end if;
@@ -653,6 +796,22 @@ begin
 				spi_wr_addr <= X"9E";
 			elsif eth_state = SERVICE_INTERRUPT6 then
 				spi_wr_addr <= X"9B";
+			elsif eth_state = PRE_TX_TRANSMIT0 then
+				spi_wr_addr <= X"BF";
+			elsif eth_state = HANDLE_TX_TRANSMIT0 then
+				spi_wr_addr <= X"42";
+			elsif eth_state = HANDLE_TX_TRANSMIT2 then
+				spi_wr_addr <= X"43";
+			elsif eth_state = HANDLE_TX_TRANSMIT4 then
+				spi_wr_addr <= X"7A";
+			elsif eth_state = HANDLE_TX_TRANSMIT8 then
+				spi_wr_addr <= X"7A";
+			elsif eth_state = HANDLE_TX_TRANSMIT11 then
+				spi_wr_addr <= X"46";
+			elsif eth_state = HANDLE_TX_TRANSMIT13 then
+				spi_wr_addr <= X"47";
+			elsif eth_state = HANDLE_TX_TRANSMIT15 then
+				spi_wr_addr <= X"9F";
 			end if;
       end if;
    end process;
@@ -688,6 +847,22 @@ begin
 				spi_wr_data <= X"40";
 			elsif eth_state = SERVICE_INTERRUPT6 then
 				spi_wr_data <= X"80";
+			elsif eth_state = PRE_TX_TRANSMIT0 then
+				spi_wr_data <= X"03";
+			elsif eth_state = HANDLE_TX_TRANSMIT0 then
+				spi_wr_data <= X"00";
+			elsif eth_state = HANDLE_TX_TRANSMIT2 then
+				spi_wr_data <= X"10";
+			elsif eth_state = HANDLE_TX_TRANSMIT4 then
+				spi_wr_data <= X"00";
+			elsif eth_state = HANDLE_TX_TRANSMIT8 then
+				spi_wr_data <= tx_packet_rd_data;
+			elsif eth_state = HANDLE_TX_TRANSMIT11 then
+				spi_wr_data <= slv(tx_packet_end_pointer(7 downto 0));
+			elsif eth_state = HANDLE_TX_TRANSMIT13 then
+				spi_wr_data <= slv(tx_packet_end_pointer(15 downto 8));
+			elsif eth_state = HANDLE_TX_TRANSMIT15 then
+				spi_wr_data <= X"08";
 			end if;
       end if;
    end process;
@@ -858,7 +1033,8 @@ begin
 	rx_packet_handled <= '1' when packet_handler_state = COMPLETE else '0';
 	send_arp_reply <= '1' when packet_handler_state = TRIGGER_ARP_REPLY else '0';
 
-	PH_NEXT_STATE_DECODE: process (packet_handler_state)
+	PH_NEXT_STATE_DECODE: process (packet_handler_state, handle_rx_packet, rx_packet_status_vector(23), 
+												rx_packet_type, arp_target_ip_addr)
    begin
       packet_handler_next_state <= packet_handler_state;  --default is to stay in current state
       case (packet_handler_state) is
@@ -949,7 +1125,9 @@ begin
 				packet_handler_next_state <= TRIGGER_ARP_REPLY;
 				
 			when TRIGGER_ARP_REPLY =>
-				packet_handler_next_state <= COMPLETE;
+				if tx_packet_config_cmplt = '1' then
+					packet_handler_next_state <= COMPLETE;
+				end if;
 			
 			when COMPLETE =>
 				packet_handler_next_state <= IDLE;
@@ -1048,7 +1226,112 @@ begin
 		end if;
 	end process;
 
---------------------- TX PACKET ------------------------------
+--------------------- TX PACKET ------------------------------	
+
+	TP_SYNC_PROC: process(CLK_IN)
+   begin
+      if rising_edge(CLK_IN) then
+			tx_packet_state <= tx_packet_next_state;
+      end if;
+   end process;
+
+	TP_NEXT_STATE_DECODE: process (tx_packet_state, send_arp_reply, frame_rd_cmplt)
+   begin
+      tx_packet_next_state <= tx_packet_state;  --default is to stay in current state
+      case (tx_packet_state) is
+         when IDLE =>
+				if send_arp_reply = '1' then
+					tx_packet_next_state <= INIT_ARP_REPLY_METADATA;
+				end if;
+			when INIT_ARP_REPLY_METADATA =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+			when READ_PACKET_BYTE0 =>
+				tx_packet_next_state <= READ_PACKET_BYTE1;
+			when READ_PACKET_BYTE1 =>
+				if frame_rd_cmplt = '1' then
+					tx_packet_next_state <= HANDLE_PACKET_INSTRUCTION0;
+				end if;
+			when HANDLE_PACKET_INSTRUCTION0 =>
+				if packet_instruction = X"FF" then
+					tx_packet_next_state <= COMPLETE;
+				else
+					tx_packet_next_state <= HANDLE_PACKET_INSTRUCTION1;
+				end if;
+			when HANDLE_PACKET_INSTRUCTION1 =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+			
+			when COMPLETE =>
+				tx_packet_next_state <= IDLE;
+				
+		end case;
+	end process;
+	
+	packet_instruction <= frame_data(15 downto 8);
+	
+	with packet_instruction select 
+		packet_data <= frame_data(7 downto 0) 						when X"00",
+							mac_addr(7 downto 0) 						when X"01",
+							mac_addr(15 downto 8) 						when X"02",
+							mac_addr(23 downto 16) 						when X"03",
+							mac_addr(31 downto 24) 						when X"04",
+							mac_addr(39 downto 32) 						when X"05",
+							mac_addr(47 downto 40) 						when X"06",
+							rx_packet_source_mac(7 downto 0) 		when X"07",
+							rx_packet_source_mac(15 downto 8) 		when X"08",
+							rx_packet_source_mac(23 downto 16) 		when X"09",
+							rx_packet_source_mac(31 downto 24) 		when X"0A",
+							rx_packet_source_mac(39 downto 32) 		when X"0B",
+							rx_packet_source_mac(47 downto 40) 		when X"0C",
+							ip_addr(7 downto 0) 							when X"0D",
+							ip_addr(15 downto 8) 						when X"0E",
+							ip_addr(23 downto 16) 						when X"0F",
+							ip_addr(31 downto 24) 						when X"10",
+							arp_source_ip_addr(7 downto 0) 			when X"11",
+							arp_source_ip_addr(15 downto 8) 			when X"12",
+							arp_source_ip_addr(23 downto 16) 		when X"13",
+							arp_source_ip_addr(31 downto 24) 		when X"14",
+							X"00"												when others;							
+							
+	FRAME_ADDR_LENGTH_PROC: process(CLK_IN)
+   begin
+      if rising_edge(CLK_IN) then
+			if tx_packet_state = INIT_ARP_REPLY_METADATA then
+				tx_packet_frame_addr <= unsigned(C_arp_reply_frame_addr);
+			elsif tx_packet_state = HANDLE_PACKET_INSTRUCTION1 then
+				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
+			end if;
+			if tx_packet_state = INIT_ARP_REPLY_METADATA then
+				tx_packet_length <= unsigned(C_arp_reply_length);
+			end if;
+			if tx_packet_state = INIT_ARP_REPLY_METADATA then
+				tx_packet_end_pointer <= X"1000" + unsigned(C_arp_reply_length);
+			end if;
+			if tx_packet_state = READ_PACKET_BYTE0 then
+				tx_packet_frame_data_rd <= '1';
+			else
+				tx_packet_frame_data_rd <= '0';
+			end if;
+			if tx_packet_state = IDLE then
+				doing_tx_packet_config <= '0';
+			else
+				doing_tx_packet_config <= '1';
+			end if;
+			if tx_packet_state = IDLE then
+				tx_packet_ram_we_addr <= "00000000000";
+			elsif tx_packet_state = HANDLE_PACKET_INSTRUCTION1 then
+				tx_packet_ram_we_addr <= tx_packet_ram_we_addr + 1;
+			end if;
+			if tx_packet_state = COMPLETE then
+				tx_packet_ready_from_transmission <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT17 then
+				tx_packet_ready_from_transmission <= '0';
+			end if;
+      end if;
+   end process;
+
+	tx_packet_ram_data <= packet_data;
+	tx_packet_ram_we <= '1' when tx_packet_state = HANDLE_PACKET_INSTRUCTION1 else '0';
+	tx_packet_config_cmplt <= '1' when tx_packet_state = COMPLETE else '0';
 
 	TX_PACKET_RAM : TDP_RAM
 		Generic Map (	G_DATA_A_SIZE 	=> tx_packet_ram_data'length,
