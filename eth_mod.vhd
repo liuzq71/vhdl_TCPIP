@@ -101,12 +101,18 @@ subtype slv is std_logic_vector;
 constant C_init_cmnds_start_addr : std_logic_vector(7 downto 0) := X"01";
 constant C_init_cmnds_max_addr 	: std_logic_vector(7 downto 0) := X"7F";
 constant C_arp_reply_frame_addr 	: std_logic_vector(19 downto 0) := X"00080";
+constant C_icmp_reply_frame_addr : std_logic_vector(19 downto 0) := X"000AB";
 
 constant C_arp_reply_length 	: std_logic_vector(15 downto 0) := X"002A";
+constant C_icmp_reply_length 	: std_logic_vector(15 downto 0) := X"0062";
+
+constant C_ARP_Packet_Type 		: std_logic_vector(15 downto 0) := X"0806";
+constant C_IP_Packet_Type 			: std_logic_vector(15 downto 0) := X"0800";
+constant C_ICMP_Protocol_Number	: std_logic_vector(7 downto 0) := X"01";
+constant C_IPV4_Protocol_Number	: std_logic_vector(3 downto 0) := X"4";
 
 constant C_phy_rd_delay_count 	: std_logic_vector(8 downto 0) := "1"&X"F4";
-
-constant C_ARP_Packet_Type : std_logic_vector(15 downto 0) := X"0806";
+constant C_ICMP_Ping_Length 		: std_logic_vector(15 downto 0) := X"0054";
 
 signal spi_we, spi_wr_continuous, spi_wr_cmplt : std_logic := '0';
 signal spi_rd, spi_rd_width, spi_rd_cmplt, spi_oper_cmplt : std_logic := '0';
@@ -130,25 +136,34 @@ signal previous_packet_pointer	: unsigned(15 downto 0) := (others => '0');
 signal eir_register					: std_logic_vector(7 downto 0) := (others => '0');
 
 signal rx_packet_ram_we, handle_rx_packet, rx_packet_handled : std_logic := '0';
-signal rx_packet_ram_we_addr, rx_packet_ram_rd_addr : unsigned(10 downto 0) := (others => '0');
-signal rx_packet_rd_data : std_logic_vector(7 downto 0);
+signal rx_packet_ram_we_addr, rx_packet_ram_we_addr_buf : unsigned(10 downto 0) := (others => '0');
+signal rx_packet_ram_rd_addr : unsigned(10 downto 0) := (others => '0');
+signal rx_packet_rd2_addr : unsigned(10 downto 0) := (others => '0');
+signal rx_packet_rd_data, rx_packet_rd_data2 : std_logic_vector(7 downto 0);
 signal rx_packet_status_vector, arp_target_ip_addr, arp_source_ip_addr : std_logic_vector(31 downto 0);
 signal rx_packet_type 			: std_logic_vector(15 downto 0);
 signal rx_packet_source_mac 	: std_logic_vector(47 downto 0);
-signal send_arp_reply : std_logic := '0';
+signal send_arp_reply, send_icmp_reply : std_logic := '0';
 
 signal tx_packet_ram_we, tx_packet_config_cmplt : std_logic := '0';
 signal tx_packet_ram_we_addr, tx_packet_ram_rd_addr : unsigned(10 downto 0) := (others => '0');
 signal tx_packet_rd_data, tx_packet_ram_data : std_logic_vector(7 downto 0);
 
-signal ip_addr  : std_logic_vector(31 downto 0) := X"0A0A0666"; 		-- 10.10.6.102
-signal mac_addr : std_logic_vector(47 downto 0) := X"8066F23D547A";
+signal ip_addr  		: std_logic_vector(31 downto 0) := X"0A0A0666"; 		-- 10.10.6.102
+signal mac_addr 		: std_logic_vector(47 downto 0) := X"8066F23D547A";
+signal ip_identification : std_logic_vector(15 downto 0) := X"1031"; -- TODO Random on startup?
+signal ping_enable 	: std_logic := '1';
 
 signal tx_packet_frame_addr :unsigned(19 downto 0);
 signal tx_packet_length, tx_packet_length_counter, tx_packet_end_pointer :unsigned(15 downto 0);
 signal doing_tx_packet_config, tx_packet_frame_data_rd : std_logic := '0';
 signal packet_instruction, packet_data : std_logic_vector(7 downto 0);
 signal tx_packet_ready_from_transmission : std_logic := '0';
+
+signal ip_packet_version 			: std_logic_vector(3 downto 0);
+signal ip_packet_protocol 			: std_logic_vector(7 downto 0);
+signal ip_packet_destination_ip 	: std_logic_vector(31 downto 0);
+signal ip_packet_length 			: std_logic_vector(15 downto 0);
 
 type ETH_ST is (	IDLE,
 						PARSE_COMMAND,
@@ -275,6 +290,21 @@ type PACKET_HANDLER_ST is (	IDLE,
 										HANDLE_ARP_REQUEST12,
 										HANDLE_ARP_REQUEST13,
 										TRIGGER_ARP_REPLY,
+										HANDLE_IP_PACKET0,
+										HANDLE_IP_PACKET1,
+										HANDLE_IP_PACKET2,
+										HANDLE_IP_PACKET3,
+										HANDLE_IP_PACKET4,
+										HANDLE_IP_PACKET5,
+										HANDLE_IP_PACKET6,
+										HANDLE_IP_PACKET7,
+										HANDLE_IP_PACKET8,
+										HANDLE_IP_PACKET9,
+										HANDLE_IP_PACKET10,
+										HANDLE_IP_PACKET11,
+										HANDLE_IP_PACKET12,
+										PRE_ICMP_PACKET_REPLY,
+										TRIGGER_ICMP_PACKET_REPLY,
 										COMPLETE
 									);
 										
@@ -282,10 +312,13 @@ signal packet_handler_state, packet_handler_next_state : PACKET_HANDLER_ST := ID
 
 type TX_PACKET_CONFIG_ST is (	IDLE,
 										INIT_ARP_REPLY_METADATA,
+										INIT_ICMP_REPLY_METADATA,
 										READ_PACKET_BYTE0,
 										READ_PACKET_BYTE1,
 										HANDLE_PACKET_INSTRUCTION0,
 										HANDLE_PACKET_INSTRUCTION1,
+										SET_RX_PACKET_ADDR_LOWER_BYTE,
+										SET_RX_PACKET_ADDR_UPPER_BYTE,
 										COMPLETE
 									);
 										
@@ -293,7 +326,9 @@ signal tx_packet_state, tx_packet_next_state : TX_PACKET_CONFIG_ST := IDLE;
 
 begin
 	
-	DEBUG_OUT(15 downto 8) <= X"00";
+	--DEBUG_OUT(15 downto 8) <= X"00";
+	DEBUG_OUT(7 downto 4) <= X"0";
+	DEBUG_OUT(15 downto 8) <= ip_packet_protocol;
 	--DEBUG_OUT(7 downto 0) <= slv(init_cmnd_addr);
 	--DEBUG_OUT(7 downto 0) <= slv(state_debug_sig);
 	--DEBUG_OUT(7 downto 0) <= enc28j60_version;
@@ -306,9 +341,10 @@ begin
 	--DEBUG_OUT <= arp_target_ip_addr(15 downto 0) when DEBUG_IN = '0' else arp_target_ip_addr(31 downto 16);
 	--DEBUG_OUT <= arp_source_ip_addr(15 downto 0) when DEBUG_IN = '0' else arp_source_ip_addr(31 downto 16);
 	--DEBUG_OUT(7 downto 0) <= rx_packet_rd_data;
-	DEBUG_OUT(7 downto 0) <= tx_packet_rd_data;
+	--DEBUG_OUT(7 downto 0) <= tx_packet_rd_data;
 	--DEBUG_OUT <= rx_packet_type;
 	--DEBUG_OUT <= slv(tx_packet_end_pointer);
+	DEBUG_OUT(3 downto 0) <= ip_packet_version;
 	
 --	debug_state: process(CLK_IN)
 --	begin
@@ -993,9 +1029,9 @@ begin
    begin
       if rising_edge(CLK_IN) then
 			if eth_state = COPY_RX_PACKET_TO_BUF0 then
-				rx_packet_ram_we_addr <= "00000000000";
+				rx_packet_ram_we_addr_buf <= "00000000000";
 			elsif eth_state = COPY_RX_PACKET_TO_BUF3 then
-				rx_packet_ram_we_addr <= rx_packet_ram_we_addr + 1;
+				rx_packet_ram_we_addr_buf <= rx_packet_ram_we_addr_buf + 1;
 			end if;
 			if eth_state = HANDLE_RX_INTERRUPT5 then
 				previous_packet_pointer <= unsigned(next_packet_pointer);
@@ -1007,6 +1043,8 @@ begin
 
 	rx_packet_ram_we <= '1' when eth_state = COPY_RX_PACKET_TO_BUF3 else '0';
 
+	rx_packet_ram_we_addr <= rx_packet_ram_we_addr_buf when doing_tx_packet_config = '0' else rx_packet_rd2_addr;
+
 	RX_PACKET_RAM : TDP_RAM
 		Generic Map (	G_DATA_A_SIZE 	=> spi_data_rd'length,
 							G_ADDR_A_SIZE	=> rx_packet_ram_we_addr'length,
@@ -1016,7 +1054,7 @@ begin
 				 WE_A_IN 		=> rx_packet_ram_we,
 				 ADDR_A_IN 		=> slv(rx_packet_ram_we_addr),
 				 DATA_A_IN		=> spi_data_rd,
-				 DATA_A_OUT		=> open,
+				 DATA_A_OUT		=> rx_packet_rd_data2,
 				 CLK_B_IN 		=> CLK_IN,
 				 WE_B_IN 		=> '0',
 				 ADDR_B_IN 		=> slv(rx_packet_ram_rd_addr),
@@ -1032,6 +1070,7 @@ begin
 
 	rx_packet_handled <= '1' when packet_handler_state = COMPLETE else '0';
 	send_arp_reply <= '1' when packet_handler_state = TRIGGER_ARP_REPLY else '0';
+	send_icmp_reply <= '1' when packet_handler_state = TRIGGER_ICMP_PACKET_REPLY else '0';
 
 	PH_NEXT_STATE_DECODE: process (packet_handler_state, handle_rx_packet, rx_packet_status_vector(23), 
 												rx_packet_type, arp_target_ip_addr)
@@ -1087,6 +1126,8 @@ begin
 			when PARSE_PACKET_TYPE4 =>
 				if rx_packet_type = C_ARP_Packet_Type then
 					packet_handler_next_state <= HANDLE_ARP_REQUEST0;
+				elsif rx_packet_type = C_IP_Packet_Type then
+					packet_handler_next_state <= HANDLE_IP_PACKET0;
 				else
 					packet_handler_next_state <= COMPLETE;
 				end if;
@@ -1125,6 +1166,55 @@ begin
 				packet_handler_next_state <= TRIGGER_ARP_REPLY;
 				
 			when TRIGGER_ARP_REPLY =>
+				if tx_packet_config_cmplt = '1' then
+					packet_handler_next_state <= COMPLETE;
+				end if;
+				
+			when HANDLE_IP_PACKET0 =>
+				packet_handler_next_state <= HANDLE_IP_PACKET1;
+			when HANDLE_IP_PACKET1 =>
+				packet_handler_next_state <= HANDLE_IP_PACKET2;
+			when HANDLE_IP_PACKET2 =>
+				packet_handler_next_state <= HANDLE_IP_PACKET3;
+			when HANDLE_IP_PACKET3 =>
+				packet_handler_next_state <= HANDLE_IP_PACKET4;
+			when HANDLE_IP_PACKET4 =>
+				packet_handler_next_state <= HANDLE_IP_PACKET5;
+			when HANDLE_IP_PACKET5 =>
+				packet_handler_next_state <= HANDLE_IP_PACKET6;
+			when HANDLE_IP_PACKET6 =>
+				packet_handler_next_state <= HANDLE_IP_PACKET7;
+			when HANDLE_IP_PACKET7 =>
+				packet_handler_next_state <= HANDLE_IP_PACKET8;
+			when HANDLE_IP_PACKET8 =>
+				packet_handler_next_state <= HANDLE_IP_PACKET9;
+			when HANDLE_IP_PACKET9 =>
+				packet_handler_next_state <= HANDLE_IP_PACKET10;
+			when HANDLE_IP_PACKET10 =>
+				if ip_packet_version = C_IPV4_Protocol_Number then
+					packet_handler_next_state <= HANDLE_IP_PACKET11;
+				else
+					packet_handler_next_state <= COMPLETE;
+				end if;
+			when HANDLE_IP_PACKET11 =>
+				if ip_packet_destination_ip = ip_addr then
+					packet_handler_next_state <= HANDLE_IP_PACKET12;
+				else
+					packet_handler_next_state <= COMPLETE;
+				end if;
+			when HANDLE_IP_PACKET12 =>
+				if ip_packet_protocol = C_ICMP_Protocol_Number then
+					packet_handler_next_state <= PRE_ICMP_PACKET_REPLY;
+				else
+					packet_handler_next_state <= COMPLETE;
+				end if;
+			when PRE_ICMP_PACKET_REPLY =>
+				if ip_packet_length = C_ICMP_Ping_Length and ping_enable = '1' then
+					packet_handler_next_state <= TRIGGER_ICMP_PACKET_REPLY;
+				else
+					packet_handler_next_state <= COMPLETE;
+				end if;
+			when TRIGGER_ICMP_PACKET_REPLY =>
 				if tx_packet_config_cmplt = '1' then
 					packet_handler_next_state <= COMPLETE;
 				end if;
@@ -1177,6 +1267,22 @@ begin
 				rx_packet_ram_rd_addr <= "000"&X"22";
 			elsif packet_handler_state = HANDLE_ARP_REQUEST10 then
 				rx_packet_ram_rd_addr <= "000"&X"23";
+			elsif packet_handler_state = HANDLE_IP_PACKET0 then
+				rx_packet_ram_rd_addr <= "000"&X"12";
+			elsif packet_handler_state = HANDLE_IP_PACKET1 then
+				rx_packet_ram_rd_addr <= "000"&X"1B";
+			elsif packet_handler_state = HANDLE_IP_PACKET2 then
+				rx_packet_ram_rd_addr <= "000"&X"22";
+			elsif packet_handler_state = HANDLE_IP_PACKET3 then
+				rx_packet_ram_rd_addr <= "000"&X"23";
+			elsif packet_handler_state = HANDLE_IP_PACKET4 then
+				rx_packet_ram_rd_addr <= "000"&X"24";
+			elsif packet_handler_state = HANDLE_IP_PACKET5 then
+				rx_packet_ram_rd_addr <= "000"&X"25";
+			elsif packet_handler_state = HANDLE_IP_PACKET6 then
+				rx_packet_ram_rd_addr <= "000"&X"14";
+			elsif packet_handler_state = HANDLE_IP_PACKET7 then
+				rx_packet_ram_rd_addr <= "000"&X"15";
 			end if;
 			if packet_handler_state = HANDLE_ARP_REQUEST9 then
 				arp_source_ip_addr(31 downto 24) <= rx_packet_rd_data;
@@ -1223,6 +1329,23 @@ begin
 			elsif packet_handler_state = PARSE_PACKET_TYPE3 then
 				rx_packet_type(7 downto 0) <= rx_packet_rd_data;
 			end if;
+			if packet_handler_state = HANDLE_IP_PACKET2 then
+				ip_packet_version <= rx_packet_rd_data(7 downto 4);
+			elsif packet_handler_state = HANDLE_IP_PACKET3 then
+				ip_packet_protocol <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_IP_PACKET4 then
+				ip_packet_destination_ip(31 downto 24) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_IP_PACKET5 then
+				ip_packet_destination_ip(23 downto 16) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_IP_PACKET6 then
+				ip_packet_destination_ip(15 downto 8) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_IP_PACKET7 then
+				ip_packet_destination_ip(7 downto 0) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_IP_PACKET8 then
+				ip_packet_length(15 downto 8) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_IP_PACKET9 then
+				ip_packet_length(7 downto 0) <= rx_packet_rd_data;
+			end if;
 		end if;
 	end process;
 
@@ -1235,15 +1358,19 @@ begin
       end if;
    end process;
 
-	TP_NEXT_STATE_DECODE: process (tx_packet_state, send_arp_reply, frame_rd_cmplt)
+	TP_NEXT_STATE_DECODE: process (tx_packet_state, send_arp_reply, send_icmp_reply, frame_rd_cmplt)
    begin
       tx_packet_next_state <= tx_packet_state;  --default is to stay in current state
       case (tx_packet_state) is
          when IDLE =>
 				if send_arp_reply = '1' then
 					tx_packet_next_state <= INIT_ARP_REPLY_METADATA;
+				elsif send_icmp_reply = '1' then
+					tx_packet_next_state <= INIT_ICMP_REPLY_METADATA;
 				end if;
 			when INIT_ARP_REPLY_METADATA =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+			when INIT_ICMP_REPLY_METADATA =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			when READ_PACKET_BYTE0 =>
 				tx_packet_next_state <= READ_PACKET_BYTE1;
@@ -1254,10 +1381,18 @@ begin
 			when HANDLE_PACKET_INSTRUCTION0 =>
 				if packet_instruction = X"FF" then
 					tx_packet_next_state <= COMPLETE;
+				elsif packet_instruction = X"17" then
+					tx_packet_next_state <= SET_RX_PACKET_ADDR_LOWER_BYTE;
+				elsif packet_instruction = X"18" then
+					tx_packet_next_state <= SET_RX_PACKET_ADDR_UPPER_BYTE;
 				else
 					tx_packet_next_state <= HANDLE_PACKET_INSTRUCTION1;
 				end if;
 			when HANDLE_PACKET_INSTRUCTION1 =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+			when SET_RX_PACKET_ADDR_LOWER_BYTE =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+			when SET_RX_PACKET_ADDR_UPPER_BYTE =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			
 			when COMPLETE =>
@@ -1290,6 +1425,11 @@ begin
 							arp_source_ip_addr(15 downto 8) 			when X"12",
 							arp_source_ip_addr(23 downto 16) 		when X"13",
 							arp_source_ip_addr(31 downto 24) 		when X"14",
+							ip_identification(7 downto 0)				when X"15",
+							ip_identification(15 downto 8)			when X"16",
+							X"00"												when X"17", -- set rx read lower byte
+							X"00"												when X"18", -- set rx read upper byte
+							rx_packet_rd_data2							when X"19",
 							X"00"												when others;							
 							
 	FRAME_ADDR_LENGTH_PROC: process(CLK_IN)
@@ -1297,14 +1437,24 @@ begin
       if rising_edge(CLK_IN) then
 			if tx_packet_state = INIT_ARP_REPLY_METADATA then
 				tx_packet_frame_addr <= unsigned(C_arp_reply_frame_addr);
+			elsif tx_packet_state = INIT_ICMP_REPLY_METADATA then
+				tx_packet_frame_addr <= unsigned(C_icmp_reply_frame_addr);
 			elsif tx_packet_state = HANDLE_PACKET_INSTRUCTION1 then
+				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
+			elsif tx_packet_state = SET_RX_PACKET_ADDR_LOWER_BYTE then
+				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
+			elsif tx_packet_state = SET_RX_PACKET_ADDR_UPPER_BYTE then
 				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
 			end if;
 			if tx_packet_state = INIT_ARP_REPLY_METADATA then
 				tx_packet_length <= unsigned(C_arp_reply_length);
+			elsif tx_packet_state = INIT_ICMP_REPLY_METADATA then
+				tx_packet_length <= unsigned(C_icmp_reply_length);
 			end if;
 			if tx_packet_state = INIT_ARP_REPLY_METADATA then
 				tx_packet_end_pointer <= X"1000" + unsigned(C_arp_reply_length);
+			elsif tx_packet_state = INIT_ICMP_REPLY_METADATA then
+				tx_packet_end_pointer <= X"1000" + unsigned(C_icmp_reply_length);
 			end if;
 			if tx_packet_state = READ_PACKET_BYTE0 then
 				tx_packet_frame_data_rd <= '1';
@@ -1325,6 +1475,13 @@ begin
 				tx_packet_ready_from_transmission <= '1';
 			elsif eth_state = HANDLE_TX_TRANSMIT17 then
 				tx_packet_ready_from_transmission <= '0';
+			end if;
+			if tx_packet_state = SET_RX_PACKET_ADDR_LOWER_BYTE then
+				rx_packet_rd2_addr(7 downto 0) <= unsigned(frame_data(7 downto 0));
+			elsif tx_packet_state = SET_RX_PACKET_ADDR_UPPER_BYTE then
+				rx_packet_rd2_addr(10 downto 8) <= unsigned(frame_data(10 downto 8));
+			elsif tx_packet_state = HANDLE_PACKET_INSTRUCTION1 then
+				rx_packet_rd2_addr <= rx_packet_rd2_addr + 1;
 			end if;
       end if;
    end process;
