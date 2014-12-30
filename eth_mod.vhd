@@ -79,6 +79,18 @@ architecture Behavioral of eth_mod is
 					CS_OUT				: out STD_LOGIC);
 	END COMPONENT;
 	
+	COMPONENT checksum_calc
+    Port ( CLK_IN 				: in  STD_LOGIC;
+           RST_IN 				: in  STD_LOGIC;
+           CHECKSUM_CALC_IN 	: in  STD_LOGIC;
+           START_ADDR_IN 		: in  STD_LOGIC_VECTOR (10 downto 0);
+           COUNT_IN 				: in  STD_LOGIC_VECTOR (10 downto 0);
+           VALUE_IN 				: in  STD_LOGIC_VECTOR (7 downto 0);
+           VALUE_ADDR_OUT 		: out  STD_LOGIC_VECTOR (10 downto 0);
+           CHECKSUM_OUT 		: out STD_LOGIC_VECTOR (15 downto 0);
+           CHECKSUM_DONE_OUT 	: out STD_LOGIC);
+	END COMPONENT;
+	
 	COMPONENT TDP_RAM
 		Generic (G_DATA_A_SIZE 	:natural :=32;
 					G_ADDR_A_SIZE	:natural :=9;
@@ -147,7 +159,9 @@ signal send_arp_reply, send_icmp_reply : std_logic := '0';
 
 signal tx_packet_ram_we, tx_packet_config_cmplt : std_logic := '0';
 signal tx_packet_ram_we_addr, tx_packet_ram_rd_addr : unsigned(10 downto 0) := (others => '0');
+signal tx_packet_ram_we_addr_buf : unsigned(10 downto 0) := (others => '0');
 signal tx_packet_rd_data, tx_packet_ram_data : std_logic_vector(7 downto 0);
+signal tx_packet_rd_data2 : std_logic_vector(7 downto 0);
 
 signal ip_addr  		: std_logic_vector(31 downto 0) := X"0A0A0666"; 		-- 10.10.6.102
 signal mac_addr 		: std_logic_vector(47 downto 0) := X"8066F23D547A";
@@ -164,6 +178,11 @@ signal ip_packet_version 			: std_logic_vector(3 downto 0);
 signal ip_packet_protocol 			: std_logic_vector(7 downto 0);
 signal ip_packet_destination_ip 	: std_logic_vector(31 downto 0);
 signal ip_packet_length 			: std_logic_vector(15 downto 0);
+
+signal calc_checksum, checksum_calc_done : std_logic := '0';
+signal checksum_start_addr, checksum_addr, checksum_wr_addr : std_logic_vector(10 downto 0);
+signal checksum_count : std_logic_vector(10 downto 0);
+signal checksum : std_logic_vector(15 downto 0);
 
 type ETH_ST is (	IDLE,
 						PARSE_COMMAND,
@@ -319,6 +338,15 @@ type TX_PACKET_CONFIG_ST is (	IDLE,
 										HANDLE_PACKET_INSTRUCTION1,
 										SET_RX_PACKET_ADDR_LOWER_BYTE,
 										SET_RX_PACKET_ADDR_UPPER_BYTE,
+										SET_CHECKSUM_LENGTH_LSB,
+										SET_CHECKSUM_LENGTH_MSB,
+										SET_CHECKSUM_START_ADDR_LSB,
+										SET_CHECKSUM_START_ADDR_MSB,
+										SET_CHECKSUM_WR_ADDR_LSB,
+										SET_CHECKSUM_WR_ADDR_MSB,
+										MOVE_TX_PACKET_WR_ADDR,
+										TRIG_CHECKSUM_CALC,
+										WAIT_FOR_CHECKSUM_CMPLT,
 										COMPLETE
 									);
 										
@@ -1385,16 +1413,58 @@ begin
 					tx_packet_next_state <= SET_RX_PACKET_ADDR_LOWER_BYTE;
 				elsif packet_instruction = X"18" then
 					tx_packet_next_state <= SET_RX_PACKET_ADDR_UPPER_BYTE;
+				elsif packet_instruction = X"20" then
+					tx_packet_next_state <= SET_CHECKSUM_LENGTH_LSB;
+				elsif packet_instruction = X"21" then
+					tx_packet_next_state <= SET_CHECKSUM_LENGTH_MSB;
+				elsif packet_instruction = X"22" then
+					tx_packet_next_state <= SET_CHECKSUM_START_ADDR_LSB;
+				elsif packet_instruction = X"23" then
+					tx_packet_next_state <= SET_CHECKSUM_START_ADDR_MSB;
+				elsif packet_instruction = X"24" then
+					tx_packet_next_state <= SET_CHECKSUM_WR_ADDR_LSB;
+				elsif packet_instruction = X"25" then
+					tx_packet_next_state <= SET_CHECKSUM_WR_ADDR_MSB;
+				elsif packet_instruction = X"26" then
+					tx_packet_next_state <= TRIG_CHECKSUM_CALC;
+				elsif packet_instruction = X"29" then
+					tx_packet_next_state <= MOVE_TX_PACKET_WR_ADDR;
 				else
 					tx_packet_next_state <= HANDLE_PACKET_INSTRUCTION1;
 				end if;
 			when HANDLE_PACKET_INSTRUCTION1 =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
+			
 			when SET_RX_PACKET_ADDR_LOWER_BYTE =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			when SET_RX_PACKET_ADDR_UPPER_BYTE =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			
+			when SET_CHECKSUM_LENGTH_LSB =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+			when SET_CHECKSUM_LENGTH_MSB =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+				
+			when SET_CHECKSUM_START_ADDR_LSB =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+			when SET_CHECKSUM_START_ADDR_MSB =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;		
+
+			when SET_CHECKSUM_WR_ADDR_LSB =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+			when SET_CHECKSUM_WR_ADDR_MSB =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;		
+			
+			when TRIG_CHECKSUM_CALC =>
+				tx_packet_next_state <= WAIT_FOR_CHECKSUM_CMPLT;
+			when WAIT_FOR_CHECKSUM_CMPLT =>
+				if checksum_calc_done = '1' then
+					tx_packet_next_state <= READ_PACKET_BYTE0;
+				end if;
+
+			when MOVE_TX_PACKET_WR_ADDR =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+				
 			when COMPLETE =>
 				tx_packet_next_state <= IDLE;
 				
@@ -1430,7 +1500,17 @@ begin
 							X"00"												when X"17", -- set rx read lower byte
 							X"00"												when X"18", -- set rx read upper byte
 							rx_packet_rd_data2							when X"19",
-							X"00"												when others;							
+							X"00"												when X"20", -- set checksum length lsb
+							X"00"												when X"21", -- set checksum length msb
+							X"00"												when X"22", -- set checksum start addr lsb
+							X"00"												when X"23", -- set checksum start addr msb
+							X"00"												when X"24", -- set checksum wr addr lsb
+							X"00"												when X"25", -- set checksum wr addr msb
+							X"00"												when X"26", -- trigger checksum calc
+							checksum(7 downto 0)  						when X"27",
+							checksum(15 downto 8)  						when X"28",
+							X"00"												when X"29", -- set tx write addr to checksum wr addr
+							X"00"												when others;
 							
 	FRAME_ADDR_LENGTH_PROC: process(CLK_IN)
    begin
@@ -1444,6 +1524,22 @@ begin
 			elsif tx_packet_state = SET_RX_PACKET_ADDR_LOWER_BYTE then
 				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
 			elsif tx_packet_state = SET_RX_PACKET_ADDR_UPPER_BYTE then
+				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
+			elsif tx_packet_state = SET_CHECKSUM_LENGTH_LSB then
+				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
+			elsif tx_packet_state = SET_CHECKSUM_LENGTH_MSB then
+				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
+			elsif tx_packet_state = SET_CHECKSUM_START_ADDR_LSB then
+				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
+			elsif tx_packet_state = SET_CHECKSUM_START_ADDR_MSB then
+				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
+			elsif tx_packet_state = SET_CHECKSUM_WR_ADDR_LSB then
+				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
+			elsif tx_packet_state = SET_CHECKSUM_WR_ADDR_MSB then
+				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
+			elsif tx_packet_state = TRIG_CHECKSUM_CALC then
+				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
+			elsif tx_packet_state = MOVE_TX_PACKET_WR_ADDR then
 				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
 			end if;
 			if tx_packet_state = INIT_ARP_REPLY_METADATA then
@@ -1467,9 +1563,11 @@ begin
 				doing_tx_packet_config <= '1';
 			end if;
 			if tx_packet_state = IDLE then
-				tx_packet_ram_we_addr <= "00000000000";
+				tx_packet_ram_we_addr_buf <= "00000000000";
 			elsif tx_packet_state = HANDLE_PACKET_INSTRUCTION1 then
-				tx_packet_ram_we_addr <= tx_packet_ram_we_addr + 1;
+				tx_packet_ram_we_addr_buf <= tx_packet_ram_we_addr_buf + 1;
+			elsif tx_packet_state = MOVE_TX_PACKET_WR_ADDR then
+				tx_packet_ram_we_addr_buf <= unsigned(checksum_wr_addr);
 			end if;
 			if tx_packet_state = COMPLETE then
 				tx_packet_ready_from_transmission <= '1';
@@ -1479,7 +1577,7 @@ begin
 			if tx_packet_state = SET_RX_PACKET_ADDR_LOWER_BYTE then
 				rx_packet_rd2_addr(7 downto 0) <= unsigned(frame_data(7 downto 0));
 			elsif tx_packet_state = SET_RX_PACKET_ADDR_UPPER_BYTE then
-				rx_packet_rd2_addr(10 downto 8) <= unsigned(frame_data(10 downto 8));
+				rx_packet_rd2_addr(10 downto 8) <= unsigned(frame_data(2 downto 0));
 			elsif tx_packet_state = HANDLE_PACKET_INSTRUCTION1 then
 				rx_packet_rd2_addr <= rx_packet_rd2_addr + 1;
 			end if;
@@ -1490,6 +1588,8 @@ begin
 	tx_packet_ram_we <= '1' when tx_packet_state = HANDLE_PACKET_INSTRUCTION1 else '0';
 	tx_packet_config_cmplt <= '1' when tx_packet_state = COMPLETE else '0';
 
+	tx_packet_ram_we_addr <= unsigned(checksum_addr) when (tx_packet_state = WAIT_FOR_CHECKSUM_CMPLT) else tx_packet_ram_we_addr_buf;
+
 	TX_PACKET_RAM : TDP_RAM
 		Generic Map (	G_DATA_A_SIZE 	=> tx_packet_ram_data'length,
 							G_ADDR_A_SIZE	=> tx_packet_ram_we_addr'length,
@@ -1499,12 +1599,44 @@ begin
 				 WE_A_IN 		=> tx_packet_ram_we,
 				 ADDR_A_IN 		=> slv(tx_packet_ram_we_addr),
 				 DATA_A_IN		=> tx_packet_ram_data,
-				 DATA_A_OUT		=> open,
+				 DATA_A_OUT		=> tx_packet_rd_data2,
 				 CLK_B_IN 		=> CLK_IN,
 				 WE_B_IN 		=> '0',
 				 ADDR_B_IN 		=> slv(tx_packet_ram_rd_addr),
 				 DATA_B_IN 		=> X"00",
 				 DATA_B_OUT 	=> tx_packet_rd_data);
+
+	CHECKSUM_METADATA_PROC: process(CLK_IN)
+   begin
+      if rising_edge(CLK_IN) then
+			if tx_packet_state = SET_CHECKSUM_LENGTH_LSB then
+				checksum_count(7 downto 0) <= frame_data(7 downto 0);
+			elsif tx_packet_state = SET_CHECKSUM_LENGTH_MSB then
+				checksum_count(10 downto 8) <= frame_data(2 downto 0);
+			elsif tx_packet_state = SET_CHECKSUM_START_ADDR_LSB then
+				checksum_start_addr(7 downto 0) <= frame_data(7 downto 0);
+			elsif tx_packet_state = SET_CHECKSUM_START_ADDR_MSB then
+				checksum_start_addr(10 downto 8) <= frame_data(2 downto 0);
+			elsif tx_packet_state = SET_CHECKSUM_WR_ADDR_LSB then
+				checksum_wr_addr(7 downto 0) <= frame_data(7 downto 0);
+			elsif tx_packet_state = SET_CHECKSUM_WR_ADDR_MSB then
+				checksum_wr_addr(10 downto 8) <= frame_data(2 downto 0);
+			end if;
+		end if;
+	end process;
+	
+	calc_checksum <= '1' when tx_packet_state = TRIG_CHECKSUM_CALC else '0';
+
+	checksum_calc_mod : checksum_calc
+    Port Map ( CLK_IN 				=> CLK_IN,
+					RST_IN 				=> '0',
+					CHECKSUM_CALC_IN 	=> calc_checksum,
+					START_ADDR_IN 		=> checksum_start_addr,
+					COUNT_IN 			=> checksum_count,
+					VALUE_IN 			=> tx_packet_rd_data2,
+					VALUE_ADDR_OUT 	=> checksum_addr,
+					CHECKSUM_OUT 		=> checksum,
+					CHECKSUM_DONE_OUT => checksum_calc_done);
 
 ------------------------- SPI --------------------------------
 
