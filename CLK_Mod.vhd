@@ -28,8 +28,9 @@ library UNISIM;
 use UNISIM.VComponents.all;
 
 entity clk_mod is
-    Port ( CLK_50MHz_IN : in  STD_LOGIC;
-           CLK_25Mhz_OUT : out  STD_LOGIC);
+    Port ( CLK_50MHz_IN 	: in  STD_LOGIC;
+           CLK_25Mhz_OUT 	: out STD_LOGIC;
+			  CLK_100Mhz_OUT 	: out STD_LOGIC);
 end clk_mod;
 
 architecture Behavioral of clk_mod is
@@ -40,6 +41,7 @@ signal clk0_2xout_tmp, clk0_2xout_bufg, clk0_div2out, clk0_div2out_bufg :std_log
 begin
 
 	CLK_25Mhz_OUT <= clk0_div2out_bufg;
+	CLK_100Mhz_OUT <= clk0_2xout_bufg;
 	
  	U0_BUFG : BUFG
     port map (I => clk0_2xout_tmp, O => clk0_2xout_bufg);

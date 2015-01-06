@@ -61,7 +61,8 @@ architecture Behavioral of hw_client is
 
 	COMPONENT clk_mod
 		 Port ( CLK_50MHz_IN 	: in  STD_LOGIC;
-				  CLK_25Mhz_OUT 	: out  STD_LOGIC);
+				  CLK_25Mhz_OUT 	: out  STD_LOGIC;
+				  CLK_100Mhz_OUT 	: out STD_LOGIC);
 	END COMPONENT;
 	
 	COMPONENT sseg
@@ -158,6 +159,7 @@ architecture Behavioral of hw_client is
 
 	COMPONENT eth_mod is
     Port ( CLK_IN 	: in  STD_LOGIC;
+			  CLK2_IN 	: in  STD_LOGIC;
            RESET_IN 	: in  STD_LOGIC;
 			  
 			  -- Command interface
@@ -184,7 +186,7 @@ architecture Behavioral of hw_client is
 
 subtype slv is std_logic_vector;
 
-signal clk_25MHz : std_logic;
+signal clk_25MHz, clk_100MHz : std_logic;
 
 signal char_addr, font_addr	: std_logic_vector(11 downto 0);
 signal char_data, font_data	: std_logic_vector(7 downto 0);
@@ -211,7 +213,8 @@ begin
 	
 	clk_mod_Inst : clk_mod
 	PORT MAP ( 	CLK_50MHz_IN 	=> CLK_IN,
-					CLK_25Mhz_OUT 	=> clk_25MHz);
+					CLK_25Mhz_OUT 	=> clk_25MHz,
+					CLK_100Mhz_OUT => clk_100MHz);
 	
 --------------------------- DEBUG LOGIC ------------------------------
 	
@@ -320,6 +323,7 @@ begin
 
 	eth_mod_inst : eth_mod
 		 Port Map ( CLK_IN 	=> clk_25MHz,
+						CLK2_IN	=> clk_100MHz,
 						RESET_IN => '0',
 				  
 					  -- Command interface
@@ -327,7 +331,7 @@ begin
 					  COMMAND_EN_IN		=> buttons_edge(1),
 					  COMMAND_CMPLT_OUT 	=> LED_OUT(1),
 					  ERROR_OUT 			=> open,
-					  DEBUG_IN				=> buttons_edge(2),
+					  DEBUG_IN				=> buttons(2),
 					  DEBUG_OUT				=> sseg_data,
 					  
 					  -- Flash mod ctrl interface
