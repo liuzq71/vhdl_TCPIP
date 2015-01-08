@@ -41,13 +41,13 @@ entity hw_client is
 				Hsync			: out STD_LOGIC;
 				Vsync			: out STD_LOGIC;
 
-				SF_DATA			: inout std_logic_vector(15 downto 0);
-				SF_ADDR			: out std_logic_vector(23 downto 1);
-				SF_CS_BAR		: out std_logic;
-				SF_WR_BAR		: out std_logic;
-				SF_OE_BAR		: out std_logic;
-				SF_RESET_BAR	: out std_logic;
-				SF_STATUS		: in std_logic;
+--				SF_DATA			: inout std_logic_vector(15 downto 0);
+--				SF_ADDR			: out std_logic_vector(23 downto 1);
+--				SF_CS_BAR		: out std_logic;
+--				SF_WR_BAR		: out std_logic;
+--				SF_OE_BAR		: out std_logic;
+--				SF_RESET_BAR	: out std_logic;
+--				SF_STATUS		: in std_logic;
 
 				SDI			: in STD_LOGIC;
 				SDO			: out STD_LOGIC;
@@ -73,56 +73,56 @@ architecture Behavioral of hw_client is
 		AN_OUT   : out STD_LOGIC_VECTOR(3 downto 0));
 	END COMPONENT;
 
-	COMPONENT vga80x40
-	  PORT (
-		 reset       : in  std_logic;
-		 clk25MHz    : in  std_logic;
-		 TEXT_A      : out std_logic_vector(11 downto 0);
-		 TEXT_D      : in  std_logic_vector(07 downto 0);
-		 FONT_A      : out std_logic_vector(11 downto 0);
-		 FONT_D      : in  std_logic_vector(07 downto 0);
-		 --
-		 ocrx        : in  std_logic_vector(07 downto 0);
-		 ocry        : in  std_logic_vector(07 downto 0);
-		 octl        : in  std_logic_vector(07 downto 0);
-		 --
-		 R           : out std_logic;
-		 G           : out std_logic;
-		 B           : out std_logic;
-		 hsync       : out std_logic;
-		 vsync       : out std_logic);   
-	END COMPONENT;
+--	COMPONENT vga80x40
+--	  PORT (
+--		 reset       : in  std_logic;
+--		 clk25MHz    : in  std_logic;
+--		 TEXT_A      : out std_logic_vector(11 downto 0);
+--		 TEXT_D      : in  std_logic_vector(07 downto 0);
+--		 FONT_A      : out std_logic_vector(11 downto 0);
+--		 FONT_D      : in  std_logic_vector(07 downto 0);
+--		 --
+--		 ocrx        : in  std_logic_vector(07 downto 0);
+--		 ocry        : in  std_logic_vector(07 downto 0);
+--		 octl        : in  std_logic_vector(07 downto 0);
+--		 --
+--		 R           : out std_logic;
+--		 G           : out std_logic;
+--		 B           : out std_logic;
+--		 hsync       : out std_logic;
+--		 vsync       : out std_logic);   
+--	END COMPONENT;
 	
-	COMPONENT user_input_handler
-		 PORT ( CLK_IN 			: in  STD_LOGIC;
-				  RX_IN 				: in  STD_LOGIC;
-				  TX_OUT 			: out  STD_LOGIC;
-				  TEXT_ADDR_IN 	: in  STD_LOGIC_VECTOR (11 downto 0);
-				  TEXT_DATA_OUT 	: out  STD_LOGIC_VECTOR (7 downto 0);
-				  FONT_ADDR_IN 	: in  STD_LOGIC_VECTOR (11 downto 0);
-				  FONT_DATA_OUT 	: out  STD_LOGIC_VECTOR (7 downto 0);
-				  CURSORPOS_X_OUT : out  STD_LOGIC_VECTOR (7 downto 0);
-				  CURSORPOS_Y_OUT : out  STD_LOGIC_VECTOR (7 downto 0);
-				  DEBUG_OUT			: out STD_LOGIC_VECTOR(7 downto 0);
-				  DEBUG_OUT2		: out STD_LOGIC_VECTOR(7 downto 0));
-	END COMPONENT;
+--	COMPONENT user_input_handler
+--		 PORT ( CLK_IN 			: in  STD_LOGIC;
+--				  RX_IN 				: in  STD_LOGIC;
+--				  TX_OUT 			: out  STD_LOGIC;
+--				  TEXT_ADDR_IN 	: in  STD_LOGIC_VECTOR (11 downto 0);
+--				  TEXT_DATA_OUT 	: out  STD_LOGIC_VECTOR (7 downto 0);
+--				  FONT_ADDR_IN 	: in  STD_LOGIC_VECTOR (11 downto 0);
+--				  FONT_DATA_OUT 	: out  STD_LOGIC_VECTOR (7 downto 0);
+--				  CURSORPOS_X_OUT : out  STD_LOGIC_VECTOR (7 downto 0);
+--				  CURSORPOS_Y_OUT : out  STD_LOGIC_VECTOR (7 downto 0);
+--				  DEBUG_OUT			: out STD_LOGIC_VECTOR(7 downto 0);
+--				  DEBUG_OUT2		: out STD_LOGIC_VECTOR(7 downto 0));
+--	END COMPONENT;
 
-	COMPONENT TDP_RAM
-		Generic (G_DATA_A_SIZE 	:natural :=32;
-					G_ADDR_A_SIZE	:natural :=9;
-					G_RELATION		:natural :=3;
-					G_INIT_FILE		:string :="");--log2(SIZE_A/SIZE_B)
-		Port ( CLK_A_IN 	: in  STD_LOGIC;
-				 WE_A_IN 	: in  STD_LOGIC;
-				 ADDR_A_IN 	: in  STD_LOGIC_VECTOR (G_ADDR_A_SIZE-1 downto 0);
-				 DATA_A_IN	: in  STD_LOGIC_VECTOR (G_DATA_A_SIZE-1 downto 0);
-				 DATA_A_OUT	: out  STD_LOGIC_VECTOR (G_DATA_A_SIZE-1 downto 0);
-				 CLK_B_IN 	: in  STD_LOGIC;
-				 WE_B_IN 	: in  STD_LOGIC;
-				 ADDR_B_IN 	: in  STD_LOGIC_VECTOR (G_ADDR_A_SIZE+G_RELATION-1 downto 0);
-				 DATA_B_IN 	: in  STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0);
-				 DATA_B_OUT : out STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0));
-	END COMPONENT;
+--	COMPONENT TDP_RAM
+--		Generic (G_DATA_A_SIZE 	:natural :=32;
+--					G_ADDR_A_SIZE	:natural :=9;
+--					G_RELATION		:natural :=3;
+--					G_INIT_FILE		:string :="");--log2(SIZE_A/SIZE_B)
+--		Port ( CLK_A_IN 	: in  STD_LOGIC;
+--				 WE_A_IN 	: in  STD_LOGIC;
+--				 ADDR_A_IN 	: in  STD_LOGIC_VECTOR (G_ADDR_A_SIZE-1 downto 0);
+--				 DATA_A_IN	: in  STD_LOGIC_VECTOR (G_DATA_A_SIZE-1 downto 0);
+--				 DATA_A_OUT	: out  STD_LOGIC_VECTOR (G_DATA_A_SIZE-1 downto 0);
+--				 CLK_B_IN 	: in  STD_LOGIC;
+--				 WE_B_IN 	: in  STD_LOGIC;
+--				 ADDR_B_IN 	: in  STD_LOGIC_VECTOR (G_ADDR_A_SIZE+G_RELATION-1 downto 0);
+--				 DATA_B_IN 	: in  STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0);
+--				 DATA_B_OUT : out STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0));
+--	END COMPONENT;
 
 	COMPONENT led_mod is
     Port ( CLK_IN 				: in  STD_LOGIC;
@@ -132,30 +132,30 @@ architecture Behavioral of hw_client is
            LEDS_OUT 				: out  STD_LOGIC_VECTOR (1 downto 0));
 	END COMPONENT;
 	
-	COMPONENT sf_mod is
-    Port ( CLK_IN 				: in  STD_LOGIC;
-           RESET_IN 				: in  STD_LOGIC;
-			  
-			  -- Command interface
-           INIT_IN 				: in  STD_LOGIC;
-           INIT_CMPLT_OUT		: out STD_LOGIC;
-			  ERROR_OUT				: out STD_LOGIC;
-			  
-			  -- Ethernet command interface
-			  ADDR_IN				: in 	STD_LOGIC_VECTOR (23 downto 1);
-			  DATA_OUT 				: out STD_LOGIC_VECTOR (15 downto 0);
-			  RD_IN					: in  STD_LOGIC;
-			  RD_CMPLT_OUT			: out STD_LOGIC;
-			  
-			  -- Flash interface
-           SF_DATA_IN 			: in   STD_LOGIC_VECTOR (15 downto 0);
-           SF_ADDR_OUT 			: out  STD_LOGIC_VECTOR (23 downto 1);
-           SF_CS_BAR_OUT 		: out  STD_LOGIC;
-           SF_OE_BAR_OUT 		: out  STD_LOGIC;
-           SF_WR_BAR_OUT 		: out  STD_LOGIC;
-           SF_RESET_BAR_OUT 	: out  STD_LOGIC;
-           SF_STATUS_IN 		: in   STD_LOGIC);
-	END COMPONENT;
+--	COMPONENT sf_mod is
+--    Port ( CLK_IN 				: in  STD_LOGIC;
+--           RESET_IN 				: in  STD_LOGIC;
+--			  
+--			  -- Command interface
+--           INIT_IN 				: in  STD_LOGIC;
+--           INIT_CMPLT_OUT		: out STD_LOGIC;
+--			  ERROR_OUT				: out STD_LOGIC;
+--			  
+--			  -- Ethernet command interface
+--			  ADDR_IN				: in 	STD_LOGIC_VECTOR (23 downto 1);
+--			  DATA_OUT 				: out STD_LOGIC_VECTOR (15 downto 0);
+--			  RD_IN					: in  STD_LOGIC;
+--			  RD_CMPLT_OUT			: out STD_LOGIC;
+--			  
+--			  -- Flash interface
+--           SF_DATA_IN 			: in   STD_LOGIC_VECTOR (15 downto 0);
+--           SF_ADDR_OUT 			: out  STD_LOGIC_VECTOR (23 downto 1);
+--           SF_CS_BAR_OUT 		: out  STD_LOGIC;
+--           SF_OE_BAR_OUT 		: out  STD_LOGIC;
+--           SF_WR_BAR_OUT 		: out  STD_LOGIC;
+--           SF_RESET_BAR_OUT 	: out  STD_LOGIC;
+--           SF_STATUS_IN 		: in   STD_LOGIC);
+--	END COMPONENT;
 
 	COMPONENT eth_mod is
     Port ( CLK_IN 	: in  STD_LOGIC;
@@ -171,10 +171,10 @@ architecture Behavioral of hw_client is
 			  DEBUG_OUT				: out  STD_LOGIC_VECTOR (15 downto 0);
 			  
            -- Flash mod ctrl interface
-			  FRAME_ADDR_OUT 				: out  STD_LOGIC_VECTOR (23 downto 1);
-           FRAME_DATA_IN 				: in  STD_LOGIC_VECTOR (15 downto 0);
-           FRAME_DATA_RD_OUT 			: out  STD_LOGIC;
-           FRAME_DATA_RD_CMPLT_IN 	: in  STD_LOGIC;
+--			  FRAME_ADDR_OUT 				: out  STD_LOGIC_VECTOR (23 downto 1);
+--           FRAME_DATA_IN 				: in  STD_LOGIC_VECTOR (15 downto 0);
+--           FRAME_DATA_RD_OUT 			: out  STD_LOGIC;
+--           FRAME_DATA_RD_CMPLT_IN 	: in  STD_LOGIC;
            
 			  -- Eth SPI interface
 			  SDI_OUT 	: out  STD_LOGIC;
@@ -218,19 +218,14 @@ begin
 	
 --------------------------- DEBUG LOGIC ------------------------------
 	
+	LED_OUT(7 downto 1) <= (others => '0');
+	
 	sseg_inst : sseg
 	PORT MAP (	
 		CLK    	=> clk_25MHz,
 		VAL_IN 	=> sseg_data,
 		SSEG_OUT	=> SSEG_OUT,
 		AN_OUT   => AN_OUT);
-	
-	led_mod_inst : led_mod
-    Port Map ( CLK_IN 				=> clk_25MHz,
-					LED_STATE_IN 		=> "001",
-					ERROR_CODE_IN		=> "11001",
-					ERROR_CODE_EN_IN	=> '0',
-					LEDS_OUT 			=> open); -- LED_OUT(1 downto 0));
 	
 	process(clk_25MHz)
 	begin
@@ -265,59 +260,75 @@ begin
 
 --------------------------- UI I/O ------------------------------
 
-	vgaRed <= r&r&r;
-	vgaGreen <= g&g&g;
-	vgaBlue <= b&b;
-	octl <= "11100111";
+	led_mod_inst : led_mod
+    Port Map ( CLK_IN 				=> clk_25MHz,
+					LED_STATE_IN 		=> "001",
+					ERROR_CODE_IN		=> "11001",
+					ERROR_CODE_EN_IN	=> '0',
+					LEDS_OUT 			=> open); -- LED_OUT(1 downto 0));
+
+--	vgaRed <= r&r&r;
+--	vgaGreen <= g&g&g;
+--	vgaBlue <= b&b;
+--	octl <= "11100111";
+
+	vgaRed <= (others => '0');
+	vgaGreen <= (others => '0');
+	vgaBlue <= (others => '0');
+	octl <= (others => '0');
+	Hsync <= '0';
+	Vsync <= '0';
 	
-	vga80x40_inst : vga80x40
-	PORT MAP (	
-		 reset       =>  '0',
-		 clk25MHz    => clk_25MHz,
-		 TEXT_A      => debug_addr, --char_addr,
-		 TEXT_D      => debug_data, --char_data,
-		 FONT_A      => font_addr,
-		 FONT_D      => font_data,
+--	vga80x40_inst : vga80x40
+--	PORT MAP (	
+--		 reset       =>  '0',
+--		 clk25MHz    => clk_25MHz,
+--		 TEXT_A      => debug_addr, --char_addr,
+--		 TEXT_D      => debug_data, --char_data,
+--		 FONT_A      => font_addr,
+--		 FONT_D      => font_data,
+--
+--		 ocrx        => slv(ocrx),
+--		 ocry        => slv(ocry),
+--		 octl        => octl,
+--
+--		 R           => r,
+--		 G           => g,
+--		 B           => b,
+--		 hsync       => Hsync,
+--		 vsync       => Vsync);
 
-		 ocrx        => slv(ocrx),
-		 ocry        => slv(ocry),
-		 octl        => octl,
+	TX_OUT <= '0';
 
-		 R           => r,
-		 G           => g,
-		 B           => b,
-		 hsync       => Hsync,
-		 vsync       => Vsync);
-
-	user_input_handler_inst : user_input_handler
-	PORT MAP (	
-				CLK_IN 				=> clk_25MHz,
-				RX_IN 				=> RX_IN,
-				TX_OUT 				=> TX_OUT,
-				TEXT_ADDR_IN 		=> char_addr,
-				TEXT_DATA_OUT 		=> char_data,
-				FONT_ADDR_IN 		=> font_addr,
-				FONT_DATA_OUT 		=> font_data,
-				CURSORPOS_X_OUT 	=> ocrx,
-				CURSORPOS_Y_OUT 	=> ocry,
-				DEBUG_OUT			=> open,
-				DEBUG_OUT2			=> debug_wr_data);
+--	user_input_handler_inst : user_input_handler
+--	PORT MAP (	
+--				CLK_IN 				=> clk_25MHz,
+--				RX_IN 				=> RX_IN,
+--				TX_OUT 				=> TX_OUT,
+--				TEXT_ADDR_IN 		=> char_addr,
+--				TEXT_DATA_OUT 		=> char_data,
+--				FONT_ADDR_IN 		=> font_addr,
+--				FONT_DATA_OUT 		=> font_data,
+--				CURSORPOS_X_OUT 	=> ocrx,
+--				CURSORPOS_Y_OUT 	=> ocry,
+--				DEBUG_OUT			=> open,
+--				DEBUG_OUT2			=> debug_wr_data);
 				
-	debug_buf : TDP_RAM
-	Generic Map ( G_DATA_A_SIZE 	=> debug_data'length,
-					  G_ADDR_A_SIZE	=> debug_addr'length,
-					  G_RELATION		=> 0, --log2(SIZE_A/SIZE_B)
-					  G_INIT_FILE		=> "./coe_dir/ascii_space.coe")
-   Port Map ( CLK_A_IN 		=> clk_25MHz,
-				  WE_A_IN 		=> '0',
-				  ADDR_A_IN 	=> debug_addr,
-				  DATA_A_IN		=> X"00",
-				  DATA_A_OUT	=> debug_data,
-				  CLK_B_IN 		=> clk_25MHz,
-				  WE_B_IN 		=> debug_we,
-				  ADDR_B_IN 	=> slv(debug_wr_addr),
-				  DATA_B_IN 	=> "00000000",
-				  DATA_B_OUT 	=> open);
+--	debug_buf : TDP_RAM
+--	Generic Map ( G_DATA_A_SIZE 	=> debug_data'length,
+--					  G_ADDR_A_SIZE	=> debug_addr'length,
+--					  G_RELATION		=> 0, --log2(SIZE_A/SIZE_B)
+--					  G_INIT_FILE		=> "./coe_dir/ascii_space.coe")
+--   Port Map ( CLK_A_IN 		=> clk_25MHz,
+--				  WE_A_IN 		=> '0',
+--				  ADDR_A_IN 	=> debug_addr,
+--				  DATA_A_IN		=> X"00",
+--				  DATA_A_OUT	=> debug_data,
+--				  CLK_B_IN 		=> clk_25MHz,
+--				  WE_B_IN 		=> debug_we,
+--				  ADDR_B_IN 	=> slv(debug_wr_addr),
+--				  DATA_B_IN 	=> "00000000",
+--				  DATA_B_OUT 	=> open);
 
 ------------------------- Ethernet Config --------------------------------
 
@@ -329,16 +340,16 @@ begin
 					  -- Command interface
 					  COMMAND_IN			=> SW_IN,
 					  COMMAND_EN_IN		=> buttons_edge(1),
-					  COMMAND_CMPLT_OUT 	=> LED_OUT(1),
+					  COMMAND_CMPLT_OUT 	=> LED_OUT(0),
 					  ERROR_OUT 			=> open,
 					  DEBUG_IN				=> buttons(2),
 					  DEBUG_OUT				=> sseg_data,
 					  
 					  -- Flash mod ctrl interface
-					  FRAME_ADDR_OUT 				=> frame_addr,
-					  FRAME_DATA_IN 				=> frame_data,
-					  FRAME_DATA_RD_OUT 			=> frame_rd,
-					  FRAME_DATA_RD_CMPLT_IN 	=> frame_rd_cmplt,
+--					  FRAME_ADDR_OUT 				=> frame_addr,
+--					  FRAME_DATA_IN 				=> frame_data,
+--					  FRAME_DATA_RD_OUT 			=> frame_rd,
+--					  FRAME_DATA_RD_CMPLT_IN 	=> frame_rd_cmplt,
 					  
 					  -- Eth SPI interface
 					  SDI_OUT 	=> SDO,
@@ -349,31 +360,31 @@ begin
 
 ------------------------- STRATA FLASH --------------------------------
 
-	LED_OUT(7 downto 2) <= (others => '0');
+	
 
-	sf_mod_inst : sf_mod
-    Port Map ( 	CLK_IN 				=> clk_25MHz,
-						RESET_IN 			=> '0',
-			  
-					  -- Command interface
-					  INIT_IN 				=> buttons_edge(0),
-					  INIT_CMPLT_OUT		=> LED_OUT(0),
-					  ERROR_OUT				=> open,
-					  
-					  -- Ethernet command interface
-					  ADDR_IN				=> frame_addr,
-					  DATA_OUT 				=> frame_data,
-					  RD_IN					=> frame_rd,
-					  RD_CMPLT_OUT			=> frame_rd_cmplt,
-					  
-					  -- Flash interface
-					  SF_DATA_IN 			=> SF_DATA,
-					  SF_ADDR_OUT 			=> SF_ADDR,
-					  SF_CS_BAR_OUT 		=> SF_CS_BAR,
-					  SF_OE_BAR_OUT 		=> SF_OE_BAR,
-					  SF_WR_BAR_OUT		=> SF_WR_BAR,
-					  SF_RESET_BAR_OUT 	=> SF_RESET_BAR,
-					  SF_STATUS_IN 		=> SF_STATUS);
+--	sf_mod_inst : sf_mod
+--    Port Map ( 	CLK_IN 				=> clk_25MHz,
+--						RESET_IN 			=> '0',
+--			  
+--					  -- Command interface
+--					  INIT_IN 				=> buttons_edge(0),
+--					  INIT_CMPLT_OUT		=> LED_OUT(0),
+--					  ERROR_OUT				=> open,
+--					  
+--					  -- Ethernet command interface
+--					  ADDR_IN				=> frame_addr,
+--					  DATA_OUT 				=> frame_data,
+--					  RD_IN					=> frame_rd,
+--					  RD_CMPLT_OUT			=> frame_rd_cmplt,
+--					  
+--					  -- Flash interface
+--					  SF_DATA_IN 			=> SF_DATA,
+--					  SF_ADDR_OUT 			=> SF_ADDR,
+--					  SF_CS_BAR_OUT 		=> SF_CS_BAR,
+--					  SF_OE_BAR_OUT 		=> SF_OE_BAR,
+--					  SF_WR_BAR_OUT		=> SF_WR_BAR,
+--					  SF_RESET_BAR_OUT 	=> SF_RESET_BAR,
+--					  SF_STATUS_IN 		=> SF_STATUS);
 
 end Behavioral;
 

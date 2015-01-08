@@ -40,10 +40,10 @@ entity eth_mod is
 			  DEBUG_OUT				: out  STD_LOGIC_VECTOR (15 downto 0);
 			  
            -- Flash mod ctrl interface
-			  FRAME_ADDR_OUT 				: out  STD_LOGIC_VECTOR (23 downto 1);
-           FRAME_DATA_IN 				: in  STD_LOGIC_VECTOR (15 downto 0);
-           FRAME_DATA_RD_OUT 			: out  STD_LOGIC;
-           FRAME_DATA_RD_CMPLT_IN 	: in  STD_LOGIC;
+--			  FRAME_ADDR_OUT 				: out  STD_LOGIC_VECTOR (23 downto 1);
+--         FRAME_DATA_IN 				: in  STD_LOGIC_VECTOR (15 downto 0);
+--         FRAME_DATA_RD_OUT 			: out  STD_LOGIC;
+--         FRAME_DATA_RD_CMPLT_IN 	: in  STD_LOGIC;
            
 			  -- Eth SPI interface
 			  SDI_OUT 	: out  STD_LOGIC;
@@ -115,15 +115,22 @@ architecture Behavioral of eth_mod is
 				 DATA_B_IN 	: in  STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0);
 				 DATA_B_OUT : out STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0));
 	END COMPONENT;
+	
+	COMPONENT Packet_Definition
+	  PORT (
+		 clka 	: IN STD_LOGIC;
+		 addra 	: IN STD_LOGIC_VECTOR(11 DOWNTO 0);
+		 douta 	: OUT STD_LOGIC_VECTOR(15 DOWNTO 0));
+	END COMPONENT;
 
 subtype slv is std_logic_vector;
 
 constant C_init_cmnds_start_addr : std_logic_vector(7 downto 0) := X"01";
 constant C_init_cmnds_max_addr 	: std_logic_vector(7 downto 0) := X"7F";
-constant C_arp_reply_frame_addr 	: std_logic_vector(19 downto 0) := X"00080";
-constant C_icmp_reply_frame_addr 	: std_logic_vector(19 downto 0) := X"000AB";
-constant C_dhcp_discover_frame_addr : std_logic_vector(19 downto 0) := X"00124";
-constant C_dhcp_request_frame_addr 	: std_logic_vector(19 downto 0) := X"00286";
+constant C_arp_reply_frame_addr 	: std_logic_vector(11 downto 0) := X"080";
+constant C_icmp_reply_frame_addr 	: std_logic_vector(11 downto 0) := X"0AB";
+constant C_dhcp_discover_frame_addr : std_logic_vector(11 downto 0) := X"124";
+constant C_dhcp_request_frame_addr 	: std_logic_vector(11 downto 0) := X"286";
 
 constant C_arp_reply_length 		: std_logic_vector(15 downto 0) := X"002A";
 constant C_icmp_reply_length 		: std_logic_vector(15 downto 0) := X"0062";
@@ -146,7 +153,7 @@ signal spi_we, spi_wr_continuous, spi_wr_cmplt : std_logic := '0';
 signal spi_rd, spi_rd_width, spi_rd_cmplt, spi_oper_cmplt : std_logic := '0';
 signal spi_wr_addr, spi_wr_data, spi_rd_addr, spi_data_rd : std_logic_vector(7 downto 0) := (others => '0');
 
-signal frame_addr : std_logic_vector(22 downto 0);
+signal frame_addr : std_logic_vector(11 downto 0);
 signal frame_data : std_logic_vector(15 downto 0);
 signal frame_data_rd, frame_rd_cmplt, slow_cs_en : std_logic := '0';
 
@@ -185,7 +192,7 @@ signal ping_enable 	: std_logic := '1';
 signal dhcp_enable 	: std_logic := '1';
 signal dhcp_addr_locked 	: std_logic := '0';
 
-signal tx_packet_frame_addr :unsigned(19 downto 0);
+signal tx_packet_frame_addr :unsigned(11 downto 0);
 signal tx_packet_length, tx_packet_length_counter, tx_packet_end_pointer :unsigned(15 downto 0);
 signal doing_tx_packet_config, tx_packet_frame_data_rd : std_logic := '0';
 signal packet_instruction, packet_data : std_logic_vector(7 downto 0);
@@ -216,6 +223,9 @@ signal dhcp_your_ip_addr, dhcp_server_ip_addr, dhcp_magic_cookie : std_logic_vec
 signal expecting_dhcp_offer, expecting_dhcp_ack : std_logic := '0';
 signal dhcp_option_addr : unsigned(10 downto 0);
 signal dhcp_option, dhcp_option_length, dhcp_message_type : std_logic_vector(7 downto 0);
+
+signal packet_definition_addr : std_logic_vector(11 downto 0);
+signal packet_definition_data : std_logic_vector(15 downto 0);
 
 type ETH_ST is (	IDLE,
 						PARSE_COMMAND,
@@ -483,11 +493,14 @@ begin
 
 	COMMAND_CMPLT_OUT <= command_cmplt;
 	
-	FRAME_ADDR_OUT(23 downto 1) <= frame_addr(22 downto 0) when doing_tx_packet_config = '0' else slv("000"&tx_packet_frame_addr);
-	FRAME_DATA_RD_OUT <= frame_data_rd when doing_tx_packet_config = '0' else tx_packet_frame_data_rd;
+	packet_definition_addr <= frame_addr when doing_tx_packet_config = '0' else slv(tx_packet_frame_addr);
+	frame_data <= packet_definition_data;
+	frame_rd_cmplt <= '1';
 	
-	frame_data <= FRAME_DATA_IN;
-	frame_rd_cmplt <= FRAME_DATA_RD_CMPLT_IN;
+	--FRAME_DATA_RD_OUT <= frame_data_rd when doing_tx_packet_config = '0' else tx_packet_frame_data_rd;
+	
+	--frame_data <= FRAME_DATA_IN;
+	--frame_rd_cmplt <= FRAME_DATA_RD_CMPLT_IN;
 
 	---- HANDLE COMMANDS ----
 
@@ -853,21 +866,21 @@ begin
    begin
       if rising_edge(CLK_IN) then
 			if eth_state = HANDLE_INIT_CMND1 then
-				frame_addr <= "000000000000000" & slv(init_cmnd_addr);
+				frame_addr <= X"0" & slv(init_cmnd_addr);
 			end if;
       end if;
    end process;
 
-	FRAME_RD_PROC: process(CLK_IN)
-   begin
-      if rising_edge(CLK_IN) then
-			if eth_state = HANDLE_INIT_CMND1 then
-				frame_data_rd <= '1';
-			else
-				frame_data_rd <= '0';
-			end if;
-      end if;
-   end process;
+--	FRAME_RD_PROC: process(CLK_IN)
+--   begin
+--      if rising_edge(CLK_IN) then
+--			if eth_state = HANDLE_INIT_CMND1 then
+--				frame_data_rd <= '1';
+--			else
+--				frame_data_rd <= '0';
+--			end if;
+--      end if;
+--   end process;
 
 	SPI_WR_PROC: process(CLK_IN)
    begin
@@ -1907,11 +1920,11 @@ begin
 			elsif tx_packet_state = INIT_DHCP_REQUEST_METADATA then
 				tx_packet_end_pointer <= X"1000" + unsigned(C_dhcp_discover_length);
 			end if;
-			if tx_packet_state = READ_PACKET_BYTE0 then
-				tx_packet_frame_data_rd <= '1';
-			else
-				tx_packet_frame_data_rd <= '0';
-			end if;
+--			if tx_packet_state = READ_PACKET_BYTE0 then
+--				tx_packet_frame_data_rd <= '1';
+--			else
+--				tx_packet_frame_data_rd <= '0';
+--			end if;
 			if tx_packet_state = IDLE then
 				doing_tx_packet_config <= '0';
 			else
@@ -1992,6 +2005,14 @@ begin
 					VALUE_ADDR_OUT 	=> checksum_addr,
 					CHECKSUM_OUT 		=> checksum,
 					CHECKSUM_DONE_OUT => checksum_calc_done);
+
+------------------- PACKET DEFINITION ------------------------
+
+	Packet_Definition_Mod : Packet_Definition
+	  Port Map (
+		 clka 	=> CLK_IN,
+		 addra 	=> packet_definition_addr,
+		 douta 	=> packet_definition_data);
 
 ------------------------- SPI --------------------------------
 
