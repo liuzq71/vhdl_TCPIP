@@ -1,0 +1,238 @@
+## ----------------------------------------------------------------------------
+##     _____
+##    /     \
+##   /____   \____
+##  / \===\   \==/
+## /___\===\___\/  AVNET Design Resource Center
+##      \======/         www.em.avnet.com/s6microboard
+##       \====/    
+## ----------------------------------------------------------------------------
+## 
+##  Created With Avnet UCF Generator V0.3.0 
+##     Date: Friday, November 12, 2010 
+##     Time: 4:11:53 PM 
+##
+##  Updates
+##     4 Jan 2011 -- added DIPs; changed IOSTANDARD for LEDs and LPDDR
+##	 11 Jan 2011 -- Changed IOSTANDARD for DIPs to LVCMOS33.
+##				    Replaced '#' on the end of net names with '_n'
+##    14 Jan 2011 -- Added I2C for CDCE913 clock chip
+##                   Added formatting and section breaks
+##    27 Jan 2011 -- Updated URL for PMODs
+##    04 Aug 2011 -- Renaming USER_RESET_N to USER_RESET since it is not low-enabled;
+##                   Added extra comment on Ethernet PHY RXD pull-ups
+##                   Removed extraneous quote mark in I2C port syntax
+## 
+##  This design is the property of Avnet.  Publication of this
+##  design is not authorized without written consent from Avnet.
+##  
+##  Please direct any questions to:
+##     Avnet Technical Forums
+##     http://community.em.avnet.com/t5/Spartan-6-LX9-MicroBoard/bd-p/Spartan-6LX9MicroBoard
+##
+##     Avnet Centralized Technical Support
+##     Centralized-Support@avnet.com
+##     1-800-422-9023
+## 
+##  Disclaimer:
+##     Avnet, Inc. makes no warranty for the use of this code or design.
+##     This code is provided  "As Is". Avnet, Inc assumes no responsibility for
+##     any errors, which may appear in this code, nor does it make a commitment
+##     to update the information contained herein. Avnet, Inc specifically
+##     disclaims any implied warranties of fitness for a particular purpose.
+##                      Copyright(c) 2011 Avnet, Inc.
+##                              All rights reserved.
+## 
+## ----------------------------------------------------------------------------
+# 
+#############################################################################
+## VCC AUX VOLTAGE 
+#############################################################################
+#CONFIG VCCAUX=3.3;
+#
+#############################################################################	
+## User Reset Push Button
+##   Ignore the timing for this signal
+##   Internal pull-down required since external resistor is not populated
+#############################################################################	
+#NET USER_RESET      LOC = V4  | IOSTANDARD = LVCMOS33 | PULLDOWN;    # "USER_RESET"
+#NET USER_RESET      TIG;
+#
+#############################################################################	
+## Micron N25Q128 SPI Flash
+##   This is a Multi-I/O Flash.  Several pins have dual purposes
+##   depending on the mode.
+#############################################################################	
+#NET SPI_SCK           LOC = R15 | IOSTANDARD = LVCMOS33;               # "CCLK"
+#NET SPI_CS_n          LOC = V3  | IOSTANDARD = LVCMOS33;               # "SPI_CS#"
+#NET SPI_MOSI_MISO0    LOC = T13 | IOSTANDARD = LVCMOS33;               # "MOSI_MISO0"
+#NET SPI_MISO_MISO1    LOC = R13 | IOSTANDARD = LVCMOS33;               # "D0_DIN_MISO_MISO1"
+#NET SPI_Wn_MISO2      LOC = T14 | IOSTANDARD = LVCMOS33;               # "D1_MISO2"
+#NET SPI_HOLDn_MISO3   LOC = V14 | IOSTANDARD = LVCMOS33;               # "D2_MISO3"
+#
+#############################################################################	
+## Texas Instruments CDCE913 Triple-Output PLL Clock Chip
+##   Y1: 40 MHz, USER_CLOCK can be used as external configuration clock
+##   Y2: 66.667 MHz
+##   Y3: 100 MHz 
+#############################################################################	
+
+NET "CLK_IN" LOC = "V10";    # Bank = 0, Pin name = IP_L13P_0/GCLK8, Type = GCLK,                 Sch name = GCLK0
+TIMESPEC ts_clk = PERIOD "CLK_IN" 20 ns HIGH 50 %;
+
+#NET CLOCK_Y2          LOC = K15 | IOSTANDARD = LVCMOS33;               # "CLOCK_Y2"
+#NET CLOCK_Y3          LOC = C10 | IOSTANDARD = LVCMOS33;               # "CLOCK_Y3"
+#
+#NET USER_CLOCK TNM_NET = USER_CLOCK;
+#TIMESPEC TS_USER_CLOCK = PERIOD USER_CLOCK 40000 kHz;
+#NET CLOCK_Y2 TNM_NET = CLOCK_Y2;
+#TIMESPEC TS_CLOCK_Y2 = PERIOD CLOCK_Y2 66666.7 kHz;
+#NET CLOCK_Y3 TNM_NET = CLOCK_Y3;
+#TIMESPEC TS_CLOCK_Y3 = PERIOD CLOCK_Y3 100000 kHz;
+#
+#############################################################################	
+## The following oscillator is not populated in production but the footprint
+## is compatible with the Maxim DS1088LU			
+#############################################################################	
+#NET BACKUP_CLK        LOC = R8  | IOSTANDARD = LVCMOS33;               # "MAIN_CLK"
+#
+#############################################################################	
+## User DIP Switch x4
+##   Internal pull-down required since external resistor is not populated
+#############################################################################	
+#NET GPIO_DIP1         LOC = B3  | IOSTANDARD = LVCMOS33 | PULLDOWN;    # "GPIO_DIP1"
+#NET GPIO_DIP2         LOC = A3  | IOSTANDARD = LVCMOS33 | PULLDOWN;    # "GPIO_DIP2"
+#NET GPIO_DIP3         LOC = B4  | IOSTANDARD = LVCMOS33 | PULLDOWN;    # "GPIO_DIP3"
+#NET GPIO_DIP4         LOC = A4  | IOSTANDARD = LVCMOS33 | PULLDOWN;    # "GPIO_DIP4"
+#
+#############################################################################	
+## User LEDs			
+#############################################################################	
+#NET GPIO_LED1         LOC = P4  | IOSTANDARD = LVCMOS18;               # "GPIO_LED1"
+#NET GPIO_LED2         LOC = L6  | IOSTANDARD = LVCMOS18;               # "GPIO_LED2"
+#NET GPIO_LED3         LOC = F5  | IOSTANDARD = LVCMOS18;               # "GPIO_LED3"
+#NET GPIO_LED4         LOC = C2  | IOSTANDARD = LVCMOS18;               # "GPIO_LED4"
+#
+#############################################################################	
+## Silicon Labs CP2102 USB-to-UART Bridge Chip
+#############################################################################	
+#NET USB_RS232_RXD     LOC = R7  | IOSTANDARD = LVCMOS33;               # "USB_RS232_RXD"
+#NET USB_RS232_TXD     LOC = T7  | IOSTANDARD = LVCMOS33;               # "USB_RS232_TXD"
+#
+#############################################################################	
+## Texas Instruments CDCE913 programming port
+##   Internal pull-ups required since external resistors are not populated
+#############################################################################	
+#NET SCL               LOC=P12   | IOSTANDARD = LVCMOS33 | PULLUP;    # "SCL"
+#NET SDA               LOC=U13   | IOSTANDARD = LVCMOS33 | PULLUP;    # "SDA"
+#
+#############################################################################	
+## Micron MT46H32M16LFBF-5 LPDDR			
+#############################################################################	
+#CONFIG MCB_PERFORMANCE= STANDARD;
+## Addresses
+
+## 7 segment display
+NET "SSEG_OUT<0>"         LOC = "J7" | IOSTANDARD = "LVCMOS33";   #Bank = 1, Pin name = IO_L51P_M1DQ12,                    Sch name = CA
+NET "SSEG_OUT<1>"         LOC = "J6" | IOSTANDARD = "LVCMOS33";   #Bank = 1, Pin name = IO_L51N_M1DQ13,                    Sch name = CB
+NET "SSEG_OUT<2>"         LOC = "H5" | IOSTANDARD = "LVCMOS33";   #Bank = 1, Pin name = IO_L52P_M1DQ14,                    Sch name = CC
+NET "SSEG_OUT<3>"         LOC = "L7" | IOSTANDARD = "LVCMOS33";   #Bank = 1, Pin name = IO_L52N_M1DQ15,                    Sch name = CD
+NET "SSEG_OUT<4>"         LOC = "F3" | IOSTANDARD = "LVCMOS33";   #Bank = 1, Pin name = IO_L53P,                           Sch name = CE
+NET "SSEG_OUT<5>"         LOC = "H4" | IOSTANDARD = "LVCMOS33";   #Bank = 1, Pin name = IO_L53N_VREF,                      Sch name = CF
+NET "SSEG_OUT<6>"         LOC = "H3" | IOSTANDARD = "LVCMOS33";   #Bank = 1, Pin name = IO_L61P,                           Sch name = CG
+NET "SSEG_OUT<7>"         LOC = "H6" | IOSTANDARD = "LVCMOS33";   #Bank = 1, Pin name = IO_L61N,                           Sch name = DP
+
+NET "AN_OUT<0>"          LOC = "D2" | IOSTANDARD = "LVCMOS33";   #Bank = 1, Pin name = IO_L50N_M1UDQSN,                   Sch name = AN0
+NET "AN_OUT<1>"          LOC = "D1" | IOSTANDARD = "LVCMOS33";   #Bank = 1, Pin name = IO_L50P_M1UDQS,                    Sch name = AN1
+NET "AN_OUT<2>"          LOC = "F4" | IOSTANDARD = "LVCMOS33";   #Bank = 1, Pin name = IO_L49N_M1DQ11,                    Sch name = AN2
+NET "AN_OUT<3>"          LOC = "D3" | IOSTANDARD = "LVCMOS33";   #Bank = 1, Pin name = IO_L49P_M1DQ10,  
+
+## Leds
+NET "LED_OUT<0>"         LOC = "G6" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L2P_CMPCLK,                     Sch name = LD0
+NET "LED_OUT<1>"         LOC = "F2" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L2N_CMPMOSI,                    Sch name = LD1
+NET "LED_OUT<2>"         LOC = "F1" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L5P,                            Sch name = LD2
+NET "LED_OUT<3>"         LOC = "L2" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L5N,                            Sch name = LD3
+NET "LED_OUT<4>"         LOC = "L1" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L15P,                           Sch name = LD4
+NET "LED_OUT<5>"         LOC = "K2" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L15N,                           Sch name = LD5
+NET "LED_OUT<6>"         LOC = "K1" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L16P,                           Sch name = LD6
+NET "LED_OUT<7>"         LOC = "H2" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L16N_VREF, 
+
+## Switches
+NET "SW_IN<0>"          LOC = "H1" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L29N_GCLK2,                     Sch name = SW0
+NET "SW_IN<1>"          LOC = "J3"  | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L32P_GCLK29,                    Sch name = SW1
+NET "SW_IN<2>"          LOC = "J1"  | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L32N_GCLK28,                    Sch name = SW2
+NET "SW_IN<3>"          LOC = "M3"  | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L40P,                           Sch name = SW3
+NET "SW_IN<4>"          LOC = "M1"  | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L40N,                           Sch name = SW4
+NET "SW_IN<5>"          LOC = "N2"  | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L41P,                           Sch name = SW5
+NET "SW_IN<6>"          LOC = "N1"  | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L41N_VREF,                      Sch name = SW6
+NET "SW_IN<7>"          LOC = "T2"  | IOSTANDARD = "LVCMOS33";   #Bank = MISC, Pin name = IO_L48N_RDWR_B_VREF_2,          Sch name = SW7
+
+## Buttons
+NET "BUTTON_IN<0>"         LOC = "T1"  | IOSTANDARD = "LVCMOS33";   #Bank = 0, Pin name = IO_L33P,                           Sch name = BTNS
+NET "BUTTON_IN<1>"         LOC = "U2"  | IOSTANDARD = "LVCMOS33";   #Bank = 0, Pin name = IO_L33N,                           Sch name = BTNU
+NET "BUTTON_IN<2>"         LOC = "U1"  | IOSTANDARD = "LVCMOS33";   #Bank = 0, Pin name = IO_L1N_VREF,                       Sch name = BTNL
+NET "BUTTON_IN<3>"         LOC = "K3"  | IOSTANDARD = "LVCMOS33";   #Bank = 0, Pin name = IO_L34N_GCLK18,     
+
+## VGA Connector
+NET "vgaRed<0>"      LOC = "K4"  | IOSTANDARD = "LVCMOS33";   # Bank = 2, Pin name = IO_L43P,                          Sch name = RED0
+NET "vgaRed<1>"      LOC = "L4"  | IOSTANDARD = "LVCMOS33";   # Bank = 2, Pin name = IO_L43N,                          Sch name = RED1
+NET "vgaRed<2>"      LOC = "P2"  | IOSTANDARD = "LVCMOS33";   # Bank = 2, Pin name = IO_L44P,                          Sch name = RED2
+NET "vgaGreen<0>"    LOC = "G1"  | IOSTANDARD = "LVCMOS33";   # Bank = 2, Pin name = IO_L44N,                          Sch name = GRN0
+NET "vgaGreen<1>"    LOC = "G3"  | IOSTANDARD = "LVCMOS33";   # Bank = 2, Pin name = IO_L45P,                          Sch name = GRN1
+NET "vgaGreen<2>"    LOC = "H7"  | IOSTANDARD = "LVCMOS33";   # Bank = 2, Pin name = IO_L45N,                          Sch name = GRN2
+NET "vgaBlue<0>"     LOC = "K5"  | IOSTANDARD = "LVCMOS33";   # Bank = 2, Pin name = IO_L46P,                          Sch name = BLU1
+NET "vgaBlue<1>"     LOC = "L5"  | IOSTANDARD = "LVCMOS33";   # Bank = 2, Pin name = IO_L46N,                          Sch name = BLU2
+
+NET "Hsync"          LOC = "E3"  | IOSTANDARD = "LVCMOS33";   # Bank = 2, Pin name = IO_L47P,                          Sch name = HSYNC
+NET "Vsync"          LOC = "N4"  | IOSTANDARD = "LVCMOS33";   # Bank = 2, Pin name = IO_L47N,                          Sch name = VSYNC
+
+##JA
+NET "RX_IN"          LOC = "M18" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L19P,                           Sch name = JA1
+NET "TX_OUT"          LOC = "N17" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L19N,                           Sch name = JA2  
+NET "SDI"          LOC = "M16" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L20P,                           Sch name = JA3
+NET "SDO"          LOC = "L18" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L20N,                           Sch name = JA4
+NET "SCLK"          LOC = "T18" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L22P,                           Sch name = JA7
+NET "CS"          LOC = "L15"  | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L22N,                           Sch name = JA8
+NET "INT"          LOC = "T17" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L23P,                           Sch name = JA9
+NET "RESET"          LOC = "N16" | IOSTANDARD = "LVCMOS33";   #Bank = 2, Pin name = IO_L23N,    
+
+NET SD_PRESENT_BAR_IN         LOC = N15 | IOSTANDARD = LVCMOS33 | PULLUP;      # "ETH_RX_D2"
+NET SD_MOSI_OUT         LOC = P18 | IOSTANDARD = LVCMOS33 | PULLUP;      # "ETH_RX_D3"
+NET SD_MISO_IN         LOC = P17 | IOSTANDARD = LVCMOS33;               # "ETH_RX_DV"
+NET SD_CLK_OUT         LOC = N18 | IOSTANDARD = LVCMOS33;               # "ETH_RX_ER"
+NET SD_CS_OUT        LOC = H17 | IOSTANDARD = LVCMOS33;               # "ETH_TX_CLK"
+#NET ETH_TX_D0         LOC = K18 | IOSTANDARD = LVCMOS33;               # "ETH_TX_D0"
+#NET ETH_TX_D1         LOC = K17 | IOSTANDARD = LVCMOS33;               # "ETH_TX_D1"
+#NET ETH_TX_D2         LOC = J18 | IOSTANDARD = LVCMOS33;               # "ETH_TX_D2"
+#NET ETH_TX_D3         LOC = J16 | IOSTANDARD = LVCMOS33;               # "ETH_TX_D3"
+#NET ETH_TX_EN         LOC = L17 | IOSTANDARD = LVCMOS33;               # "ETH_TX_EN"
+#
+#############################################################################	
+## Peripheral Modules and GPIO
+##   Peripheral Modules (PMODs) were invented by Digilent Inc. as small, 
+##   inexpensive add-on boards for FPGA development boards. With costs 
+##   starting as low as $10, PMODs allow you to add a number of capabilities 
+##   to your board, including A/D, D/A, Wireless Radio, SD Card, 2x16 
+##   Character LCD and a variety of LEDs, switches, and headers. See the 
+##   complete library of Digilent PMODs at 
+##     https://www.digilentinc.com/PMODs
+#############################################################################	
+## Connector J5
+#NET PMOD1_P1          LOC = F15 | IOSTANDARD = LVCMOS33;               # "PMOD1_P1"
+#NET PMOD1_P2          LOC = F16 | IOSTANDARD = LVCMOS33;               # "PMOD1_P2"
+#NET PMOD1_P3          LOC = C17 | IOSTANDARD = LVCMOS33;               # "PMOD1_P3"
+#NET PMOD1_P4          LOC = C18 | IOSTANDARD = LVCMOS33;               # "PMOD1_P4"
+#NET PMOD1_P7          LOC = F14 | IOSTANDARD = LVCMOS33;               # "PMOD1_P7"
+#NET PMOD1_P8          LOC = G14 | IOSTANDARD = LVCMOS33;               # "PMOD1_P8"
+#NET PMOD1_P9          LOC = D17 | IOSTANDARD = LVCMOS33;               # "PMOD1_P9"
+#NET PMOD1_P10         LOC = D18 | IOSTANDARD = LVCMOS33;               # "PMOD1_P10"
+#
+## Connector J4
+#NET PMOD2_P1          LOC = H12 | IOSTANDARD = LVCMOS33;               # "PMOD2_P1"
+#NET PMOD2_P2          LOC = G13 | IOSTANDARD = LVCMOS33;               # "PMOD2_P2"
+#NET PMOD2_P3          LOC = E16 | IOSTANDARD = LVCMOS33;               # "PMOD2_P3"
+#NET PMOD2_P4          LOC = E18 | IOSTANDARD = LVCMOS33;               # "PMOD2_P4"
+#NET PMOD2_P7          LOC = K12 | IOSTANDARD = LVCMOS33;               # "PMOD2_P7"
+#NET PMOD2_P8          LOC = K13 | IOSTANDARD = LVCMOS33;               # "PMOD2_P8"
+#NET PMOD2_P9          LOC = F17 | IOSTANDARD = LVCMOS33;               # "PMOD2_P9"
+#NET PMOD2_P10         LOC = F18 | IOSTANDARD = LVCMOS33;               # "PMOD2_P10"

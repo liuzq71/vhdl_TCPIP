@@ -125,17 +125,19 @@ architecture Behavioral of eth_mod is
 
 subtype slv is std_logic_vector;
 
-constant C_init_cmnds_start_addr : std_logic_vector(7 downto 0) := X"01";
-constant C_init_cmnds_max_addr 	: std_logic_vector(7 downto 0) := X"7F";
-constant C_arp_reply_frame_addr 	: std_logic_vector(11 downto 0) := X"080";
+constant C_init_cmnds_start_addr 	: std_logic_vector(7 downto 0) := X"01";
+constant C_init_cmnds_max_addr 		: std_logic_vector(7 downto 0) := X"7F";
+constant C_arp_reply_frame_addr 		: std_logic_vector(11 downto 0) := X"080";
 constant C_icmp_reply_frame_addr 	: std_logic_vector(11 downto 0) := X"0AB";
 constant C_dhcp_discover_frame_addr : std_logic_vector(11 downto 0) := X"124";
 constant C_dhcp_request_frame_addr 	: std_logic_vector(11 downto 0) := X"286";
+constant C_arp_request_frame_addr 	: std_logic_vector(11 downto 0) := X"467";
 
 constant C_arp_reply_length 		: std_logic_vector(15 downto 0) := X"002A";
 constant C_icmp_reply_length 		: std_logic_vector(15 downto 0) := X"0062";
 constant C_dhcp_discover_length 	: std_logic_vector(15 downto 0) := X"0156";
 constant C_dhcp_request_length 	: std_logic_vector(15 downto 0) := X"015C";
+constant C_arp_request_length 	: std_logic_vector(15 downto 0) := X"002A";
 
 constant C_ARP_Packet_Type 		: std_logic_vector(15 downto 0) := X"0806";
 constant C_IP_Packet_Type 			: std_logic_vector(15 downto 0) := X"0800";
@@ -148,6 +150,8 @@ constant C_dhcp_magic_cookie		: std_logic_vector(31 downto 0) := X"63825363";
 
 constant C_phy_rd_delay_count 	: std_logic_vector(8 downto 0) := "1"&X"F4";
 constant C_ICMP_Ping_Length 		: std_logic_vector(15 downto 0) := X"0054";
+constant C_ARP_Request 				: std_logic_vector(7 downto 0) := X"01";
+constant C_ARP_Reply			 		: std_logic_vector(7 downto 0) := X"02";
 
 signal spi_we, spi_wr_continuous, spi_wr_cmplt : std_logic := '0';
 signal spi_rd, spi_rd_width, spi_rd_cmplt, spi_oper_cmplt : std_logic := '0';
@@ -177,7 +181,9 @@ signal rx_packet_rd_data, rx_packet_rd_data2 : std_logic_vector(7 downto 0);
 signal rx_packet_status_vector, arp_target_ip_addr, arp_source_ip_addr : std_logic_vector(31 downto 0);
 signal rx_packet_type 			: std_logic_vector(15 downto 0);
 signal rx_packet_source_mac 	: std_logic_vector(47 downto 0);
-signal send_arp_reply, send_icmp_reply, send_dhcp_discover, send_dhcp_request : std_logic := '0';
+signal send_arp_reply, send_arp_request : std_logic := '0';
+signal send_icmp_reply, send_dhcp_discover, send_dhcp_request : std_logic := '0';
+signal arp_opcode : std_logic_vector(7 downto 0);
 
 signal tx_packet_ram_we, tx_packet_config_cmplt : std_logic := '0';
 signal tx_packet_ram_we_addr, tx_packet_ram_rd_addr : unsigned(10 downto 0) := (others => '0');
@@ -185,12 +191,15 @@ signal tx_packet_ram_we_addr_buf : unsigned(10 downto 0) := (others => '0');
 signal tx_packet_rd_data, tx_packet_ram_data : std_logic_vector(7 downto 0);
 signal tx_packet_rd_data2 : std_logic_vector(7 downto 0);
 
-signal ip_addr  		: std_logic_vector(31 downto 0) := X"C0A80166"; 		-- 192.168.1.104
+signal ip_addr  		: std_logic_vector(31 downto 0) := X"C0A80166"; 		-- 192.168.1.102
 signal mac_addr 		: std_logic_vector(47 downto 0) := X"8066F23D547A";
-signal ip_identification : std_logic_vector(15 downto 0); -- TODO Random on startup?
+signal ip_identification : std_logic_vector(15 downto 0);
 signal ping_enable 	: std_logic := '1';
 signal dhcp_enable 	: std_logic := '1';
 signal dhcp_addr_locked 	: std_logic := '0';
+
+signal server_ip_addr : std_logic_vector(31 downto 0) := X"00000000";
+signal server_mac_addr : std_logic_vector(47 downto 0) := X"000000000000";
 
 signal tx_packet_frame_addr :unsigned(11 downto 0);
 signal tx_packet_length, tx_packet_length_counter, tx_packet_end_pointer :unsigned(15 downto 0);
@@ -220,7 +229,7 @@ signal transaction_id_rd : std_logic_vector(31 downto 0) := X"00000000";
 signal udp_source_port, udp_dest_port : std_logic_vector(15 downto 0);
 signal dhcp_your_ip_addr, dhcp_server_ip_addr, dhcp_magic_cookie : std_logic_vector(31 downto 0);
 
-signal expecting_dhcp_offer, expecting_dhcp_ack : std_logic := '0';
+signal expecting_dhcp_offer, expecting_dhcp_ack, expecting_arp_reply : std_logic := '0';
 signal dhcp_option_addr : unsigned(10 downto 0);
 signal dhcp_option, dhcp_option_length, dhcp_message_type : std_logic_vector(7 downto 0);
 
@@ -230,6 +239,7 @@ signal packet_definition_data : std_logic_vector(15 downto 0);
 type ETH_ST is (	IDLE,
 						PARSE_COMMAND,
 						TRIGGER_DHCP_DISCOVER,
+						TRIGGER_ARP_REQUEST,
 						READ_VERSION0,
 						READ_VERSION1,
 						READ_VERSION2,
@@ -313,8 +323,7 @@ type ETH_ST is (	IDLE,
 						HANDLE_TX_TRANSMIT14,
 						HANDLE_TX_TRANSMIT15,
 						HANDLE_TX_TRANSMIT16,
-						HANDLE_TX_TRANSMIT17
-						);
+						HANDLE_TX_TRANSMIT17);
 
 signal eth_state, eth_next_state : ETH_ST := IDLE;
 signal state_debug_sig : unsigned(7 downto 0);
@@ -340,6 +349,10 @@ type PACKET_HANDLER_ST is (	IDLE,
 										PARSE_PACKET_TYPE2,
 										PARSE_PACKET_TYPE3,
 										PARSE_PACKET_TYPE4,
+										HANDLE_ARP_PACKET0,
+										HANDLE_ARP_PACKET1,
+										HANDLE_ARP_PACKET2,
+										HANDLE_ARP_PACKET3,
 										HANDLE_ARP_REQUEST0,
 										HANDLE_ARP_REQUEST1,
 										HANDLE_ARP_REQUEST2,
@@ -354,6 +367,14 @@ type PACKET_HANDLER_ST is (	IDLE,
 										HANDLE_ARP_REQUEST11,
 										HANDLE_ARP_REQUEST12,
 										HANDLE_ARP_REQUEST13,
+										HANDLE_ARP_REPLY0,
+										HANDLE_ARP_REPLY1,
+										HANDLE_ARP_REPLY2,
+										HANDLE_ARP_REPLY3,
+										HANDLE_ARP_REPLY4,
+										HANDLE_ARP_REPLY5,
+										HANDLE_ARP_REPLY6,
+										HANDLE_ARP_REPLY7,
 										TRIGGER_ARP_REPLY,
 										HANDLE_IP_PACKET0,
 										HANDLE_IP_PACKET1,
@@ -414,6 +435,7 @@ signal packet_handler_state, packet_handler_next_state : PACKET_HANDLER_ST := ID
 
 type TX_PACKET_CONFIG_ST is (	IDLE,
 										INIT_ARP_REPLY_METADATA,
+										INIT_ARP_REQUEST_METADATA,
 										INIT_ICMP_REPLY_METADATA,
 										INIT_DHCP_DISCOVER_METADATA,
 										INIT_DHCP_REQUEST_METADATA,
@@ -458,7 +480,7 @@ begin
 	--DEBUG_OUT <= arp_target_ip_addr(15 downto 0) when DEBUG_IN = '0' else arp_target_ip_addr(31 downto 16);
 	--DEBUG_OUT <= arp_source_ip_addr(15 downto 0) when DEBUG_IN = '0' else arp_source_ip_addr(31 downto 16);
 	--DEBUG_OUT <= dhcp_your_ip_addr(15 downto 0) when DEBUG_IN = '0' else dhcp_your_ip_addr(31 downto 16);
-	DEBUG_OUT <= ip_addr(15 downto 0) when DEBUG_IN = '0' else ip_addr(31 downto 16);
+	DEBUG_OUT <= server_mac_addr(15 downto 0) when DEBUG_IN = '0' else server_mac_addr(31 downto 16);
 	--DEBUG_OUT(7 downto 0) <= rx_packet_rd_data;
 	--DEBUG_OUT(7 downto 0) <= tx_packet_rd_data;
 	--DEBUG_OUT <= rx_packet_type;
@@ -535,6 +557,8 @@ begin
 					eth_next_state <= HANDLE_INIT_CMND0;
 				elsif command = X"04" then
 					eth_next_state <= TRIGGER_DHCP_DISCOVER;
+				elsif command = X"05" then
+					eth_next_state <= TRIGGER_ARP_REQUEST;
 				else
 					eth_next_state <= IDLE;
 				end if;
@@ -565,6 +589,9 @@ begin
 				end if;
 			
 			when TRIGGER_DHCP_DISCOVER =>
+				eth_next_state <= IDLE;
+				
+			when TRIGGER_ARP_REQUEST =>
 				eth_next_state <= IDLE;
 			
 			when READ_VERSION0 =>
@@ -1227,6 +1254,7 @@ begin
 
 	rx_packet_handled <= '1' when packet_handler_state = COMPLETE else '0';
 	send_arp_reply <= '1' when packet_handler_state = TRIGGER_ARP_REPLY else '0';
+	send_arp_request <= '1' when eth_state = TRIGGER_ARP_REQUEST else '0';
 	send_icmp_reply <= '1' when packet_handler_state = TRIGGER_ICMP_PACKET_REPLY else '0';
 	send_dhcp_discover <= '1' when eth_state = TRIGGER_DHCP_DISCOVER else '0';
 	send_dhcp_request <= '1' when packet_handler_state = TRIGGER_DHCP_REQUEST else '0';
@@ -1284,13 +1312,49 @@ begin
 				packet_handler_next_state <= PARSE_PACKET_TYPE4;
 			when PARSE_PACKET_TYPE4 =>
 				if rx_packet_type = C_ARP_Packet_Type then
-					packet_handler_next_state <= HANDLE_ARP_REQUEST0;
+					packet_handler_next_state <= HANDLE_ARP_PACKET0;
 				elsif rx_packet_type = C_IP_Packet_Type then
 					packet_handler_next_state <= HANDLE_IP_PACKET0;
 				else
 					packet_handler_next_state <= COMPLETE;
 				end if;
+			
+			when HANDLE_ARP_PACKET0 =>
+				packet_handler_next_state <= HANDLE_ARP_PACKET1;
+			when HANDLE_ARP_PACKET1 =>
+				packet_handler_next_state <= HANDLE_ARP_PACKET2;
+			when HANDLE_ARP_PACKET2 =>
+				packet_handler_next_state <= HANDLE_ARP_PACKET3;
+			when HANDLE_ARP_PACKET3 =>
+				if arp_opcode = C_ARP_Request then
+					packet_handler_next_state <= HANDLE_ARP_REQUEST0;
+				elsif arp_opcode = C_ARP_Reply then
+					packet_handler_next_state <= HANDLE_ARP_REPLY0;
+				else
+					packet_handler_next_state <= COMPLETE;
+				end if;
 				
+			when HANDLE_ARP_REPLY0 =>
+				if expecting_arp_reply = '1' then
+					packet_handler_next_state <= HANDLE_ARP_REPLY1;
+				else
+					packet_handler_next_state <= COMPLETE;
+				end if;
+			when HANDLE_ARP_REPLY1 =>
+				packet_handler_next_state <= HANDLE_ARP_REPLY2;
+			when HANDLE_ARP_REPLY2 =>
+				packet_handler_next_state <= HANDLE_ARP_REPLY3;	
+			when HANDLE_ARP_REPLY3 =>
+				packet_handler_next_state <= HANDLE_ARP_REPLY4;
+			when HANDLE_ARP_REPLY4 =>
+				packet_handler_next_state <= HANDLE_ARP_REPLY5;
+			when HANDLE_ARP_REPLY5 =>
+				packet_handler_next_state <= HANDLE_ARP_REPLY6;
+			when HANDLE_ARP_REPLY6 =>
+				packet_handler_next_state <= HANDLE_ARP_REPLY7;
+			when HANDLE_ARP_REPLY7 =>
+				packet_handler_next_state <= COMPLETE;
+			
 			when HANDLE_ARP_REQUEST0 =>
 				packet_handler_next_state <= HANDLE_ARP_REQUEST1;
 			when HANDLE_ARP_REQUEST1 =>
@@ -1544,8 +1608,15 @@ begin
 				rx_packet_ram_rd_addr <= "001"&X"1A";
 			elsif packet_handler_state = PARSE_DHCP_PACKET19 then
 				rx_packet_ram_rd_addr <= dhcp_option_addr;
+			elsif packet_handler_state = HANDLE_ARP_PACKET0 then
+				rx_packet_ram_rd_addr <= "000"&X"19";
+			elsif packet_handler_state = HANDLE_ARP_REPLY0 then
+				rx_packet_ram_rd_addr <= "000"&X"1A";
 			else
 				rx_packet_ram_rd_addr <= rx_packet_ram_rd_addr + 1;
+			end if;
+			if packet_handler_state = HANDLE_ARP_PACKET2 then
+				arp_opcode <= rx_packet_rd_data;
 			end if;
 			if packet_handler_state = HANDLE_ARP_REQUEST9 then
 				arp_source_ip_addr(31 downto 24) <= rx_packet_rd_data;
@@ -1669,13 +1740,25 @@ begin
 			end if;
 			if packet_handler_state = PARSE_DHCP_PACKET18 then
 				dhcp_option_addr <= "001"&X"1E";
-			elsif packet_handler_state = PARSE_DHCP_PACKET23 then
-				dhcp_option_addr <= dhcp_option_addr + "000"&unsigned(dhcp_option_length);
+	--		elsif packet_handler_state = PARSE_DHCP_PACKET23 then
+--				dhcp_option_addr <= dhcp_option_addr + "000"&unsigned(dhcp_option_length);
 			end if;
 			if packet_handler_state = PARSE_DHCP_PACKET23 then
 				dhcp_message_type <= rx_packet_rd_data;
 			end if;
-
+			if packet_handler_state = HANDLE_ARP_REPLY2 then
+				server_mac_addr(47 downto 40) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_ARP_REPLY3 then
+				server_mac_addr(39 downto 32) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_ARP_REPLY4 then
+				server_mac_addr(31 downto 24) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_ARP_REPLY5 then
+				server_mac_addr(23 downto 16) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_ARP_REPLY6 then
+				server_mac_addr(15 downto 8) <= rx_packet_rd_data;
+			elsif packet_handler_state = HANDLE_ARP_REPLY7 then
+				server_mac_addr(7 downto 0) <= rx_packet_rd_data;
+			end if;
 		end if;
 	end process;
 
@@ -1684,6 +1767,7 @@ begin
       if rising_edge(CLK_IN) then
 			if packet_handler_state = HANDLE_DHCP_ACK1 then
 				ip_addr <= dhcp_your_ip_addr;
+				server_ip_addr <= dhcp_server_ip_addr;
 			end if;
 			if tx_packet_state = INIT_DHCP_DISCOVER_METADATA then
 				expecting_dhcp_offer <= '1';
@@ -1700,6 +1784,11 @@ begin
 			elsif packet_handler_state = HANDLE_DHCP_ACK1 then
 				dhcp_addr_locked <= '1';
 			end if;
+			if eth_state = TRIGGER_ARP_REQUEST then
+				expecting_arp_reply <= '1';
+			elsif packet_handler_state = HANDLE_ARP_REPLY1 then
+				expecting_arp_reply <= '0';
+			end if;
       end if;
    end process;	
 				
@@ -1713,13 +1802,16 @@ begin
       end if;
    end process;
 
-	TP_NEXT_STATE_DECODE: process (tx_packet_state, send_arp_reply, send_icmp_reply, send_dhcp_discover, send_dhcp_request, frame_rd_cmplt)
+	TP_NEXT_STATE_DECODE: process (tx_packet_state, send_arp_reply, send_arp_request, send_icmp_reply, 
+												send_dhcp_discover, send_dhcp_request, frame_rd_cmplt)
    begin
       tx_packet_next_state <= tx_packet_state;  --default is to stay in current state
       case (tx_packet_state) is
          when IDLE =>
 				if send_arp_reply = '1' then
 					tx_packet_next_state <= INIT_ARP_REPLY_METADATA;
+				elsif send_arp_request = '1' then
+					tx_packet_next_state <= INIT_ARP_REQUEST_METADATA;
 				elsif send_icmp_reply = '1' then
 					tx_packet_next_state <= INIT_ICMP_REPLY_METADATA;
 				elsif send_dhcp_discover = '1' then
@@ -1728,6 +1820,8 @@ begin
 					tx_packet_next_state <= INIT_DHCP_REQUEST_METADATA;
 				end if;
 			when INIT_ARP_REPLY_METADATA =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+			when INIT_ARP_REQUEST_METADATA =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			when INIT_ICMP_REPLY_METADATA =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
@@ -1863,7 +1957,16 @@ begin
 							dhcp_your_ip_addr(15 downto 8)			when X"34",
 							dhcp_your_ip_addr(23 downto 16)			when X"35",
 							dhcp_your_ip_addr(31 downto 24)			when X"36",
-							
+							server_ip_addr(7 downto 0)					when X"37",
+							server_ip_addr(15 downto 8)				when X"38",
+							server_ip_addr(23 downto 16)				when X"39",
+							server_ip_addr(31 downto 24)				when X"3A",
+							server_mac_addr(7 downto 0) 				when X"3B",
+							server_mac_addr(15 downto 8) 				when X"3C",
+							server_mac_addr(23 downto 16) 			when X"3D",
+							server_mac_addr(31 downto 24) 			when X"3E",
+							server_mac_addr(39 downto 32) 			when X"3F",
+							server_mac_addr(47 downto 40) 			when X"40",
 							X"00"												when others;
 	
 	RANDOM_VALS_PROC: process(CLK_IN)
@@ -1881,6 +1984,8 @@ begin
       if rising_edge(CLK_IN) then
 			if tx_packet_state = INIT_ARP_REPLY_METADATA then
 				tx_packet_frame_addr <= unsigned(C_arp_reply_frame_addr);
+			elsif tx_packet_state = INIT_ARP_REQUEST_METADATA then
+				tx_packet_frame_addr <= unsigned(C_arp_request_frame_addr);
 			elsif tx_packet_state = INIT_ICMP_REPLY_METADATA then
 				tx_packet_frame_addr <= unsigned(C_icmp_reply_frame_addr);
 			elsif tx_packet_state = INIT_DHCP_DISCOVER_METADATA then
@@ -1904,6 +2009,8 @@ begin
 			end if;
 			if tx_packet_state = INIT_ARP_REPLY_METADATA then
 				tx_packet_length <= unsigned(C_arp_reply_length);
+			elsif tx_packet_state = INIT_ARP_REQUEST_METADATA then
+				tx_packet_length <= unsigned(C_arp_request_length);
 			elsif tx_packet_state = INIT_ICMP_REPLY_METADATA then
 				tx_packet_length <= unsigned(C_icmp_reply_length);
 			elsif tx_packet_state = INIT_DHCP_DISCOVER_METADATA then
@@ -1913,6 +2020,8 @@ begin
 			end if;
 			if tx_packet_state = INIT_ARP_REPLY_METADATA then
 				tx_packet_end_pointer <= X"1000" + unsigned(C_arp_reply_length);
+			elsif tx_packet_state = INIT_ARP_REQUEST_METADATA then
+				tx_packet_end_pointer <= X"1000" + unsigned(C_arp_request_length);
 			elsif tx_packet_state = INIT_ICMP_REPLY_METADATA then
 				tx_packet_end_pointer <= X"1000" + unsigned(C_icmp_reply_length);
 			elsif tx_packet_state = INIT_DHCP_DISCOVER_METADATA then

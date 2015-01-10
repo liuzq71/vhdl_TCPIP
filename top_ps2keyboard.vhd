@@ -339,7 +339,7 @@ begin
 				  
 					  -- Command interface
 					  COMMAND_IN			=> SW_IN,
-					  COMMAND_EN_IN		=> buttons_edge(1),
+					  COMMAND_EN_IN		=> buttons_edge(0),
 					  COMMAND_CMPLT_OUT 	=> LED_OUT(0),
 					  ERROR_OUT 			=> open,
 					  DEBUG_IN				=> buttons(2),
