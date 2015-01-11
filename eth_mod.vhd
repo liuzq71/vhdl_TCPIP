@@ -147,6 +147,7 @@ constant C_ARP_Packet_Type 		: std_logic_vector(15 downto 0) := X"0806";
 constant C_IP_Packet_Type 			: std_logic_vector(15 downto 0) := X"0800";
 constant C_ICMP_Protocol_Number	: std_logic_vector(7 downto 0) := X"01";
 constant C_UDP_Protocol_Number	: std_logic_vector(7 downto 0) := X"11";
+constant C_TCP_Protocol_Number	: std_logic_vector(7 downto 0) := X"06";
 constant C_IPV4_Protocol_Number	: std_logic_vector(3 downto 0) := X"4";
 constant C_DHCP_Source_Port		: std_logic_vector(15 downto 0) := X"0043";
 constant C_DHCP_Dest_Port			: std_logic_vector(15 downto 0) := X"0044";
@@ -237,6 +238,7 @@ signal udp_source_port, udp_dest_port : std_logic_vector(15 downto 0);
 signal dhcp_your_ip_addr, dhcp_server_ip_addr, dhcp_magic_cookie : std_logic_vector(31 downto 0);
 
 signal expecting_dhcp_offer, expecting_dhcp_ack, expecting_arp_reply : std_logic := '0';
+signal expecting_syn_ack : std_logic := '0';
 signal dhcp_option_addr : unsigned(10 downto 0);
 signal dhcp_option, dhcp_option_length, dhcp_message_type : std_logic_vector(7 downto 0);
 
@@ -249,6 +251,12 @@ signal tcp_sequence_number, tcp_acknowledge_number : std_logic_vector(31 downto 
 signal tcp_flags : std_logic_vector(7 downto 0) := (others => '0');
 signal window_size : std_logic_vector(15 downto 0) := X"0200";
 signal send_tcp_svn_packet : std_logic := '0';
+
+signal rx_tcp_source_port, rx_tcp_dest_port : std_logic_vector(15 downto 0) := (others => '0');
+signal rx_tcp_seq_number, rx_tcp_ack_number : std_logic_vector(31 downto 0) := (others => '0');
+signal rx_tcp_window_size, rx_tcp_checksum : std_logic_vector(15 downto 0) := (others => '0');
+signal rx_tcp_flags, rx_tcp_option : std_logic_vector(7 downto 0) := (others => '0');
+signal rx_tcp_option_length : unsigned(7 downto 0);
 
 type ETH_ST is (	IDLE,
 						PARSE_COMMAND,
@@ -443,6 +451,24 @@ type PACKET_HANDLER_ST is (	IDLE,
 										TRIGGER_DHCP_REQUEST,
 										HANDLE_DHCP_ACK0,
 										HANDLE_DHCP_ACK1,
+										PARSE_TCP_PACKET0,
+										PARSE_TCP_PACKET1,
+										PARSE_TCP_PACKET2,
+										PARSE_TCP_PACKET3,
+										PARSE_TCP_PACKET4,
+										PARSE_TCP_PACKET5,
+										PARSE_TCP_PACKET6,
+										PARSE_TCP_PACKET7,
+										PARSE_TCP_PACKET8,
+										PARSE_TCP_PACKET9,
+										PARSE_TCP_PACKET10,
+										PARSE_TCP_PACKET11,
+										PARSE_TCP_PACKET12,
+										PARSE_TCP_PACKET13,
+										PARSE_TCP_PACKET14,
+										PARSE_TCP_PACKET15,
+										PARSE_TCP_PACKET16,
+										PARSE_TCP_PACKET17,
 										COMPLETE
 									);
 										
@@ -1455,6 +1481,8 @@ begin
 					packet_handler_next_state <= PRE_ICMP_PACKET_REPLY;
 				elsif ip_packet_protocol = C_UDP_Protocol_Number then
 					packet_handler_next_state <= PARSE_UDP_PACKET0;
+				elsif ip_packet_protocol = C_TCP_Protocol_Number then
+					packet_handler_next_state <= PARSE_TCP_PACKET0;
 				else
 					packet_handler_next_state <= COMPLETE;
 				end if;
@@ -1574,7 +1602,7 @@ begin
 				else
 					packet_handler_next_state <= COMPLETE;
 				end if;
-				
+			
 			when CHECK_OFFER_EXPECTED =>
 				if expecting_dhcp_offer = '1' then
 					packet_handler_next_state <= TRIGGER_DHCP_REQUEST;
@@ -1595,6 +1623,79 @@ begin
 			when HANDLE_DHCP_ACK1 =>
 				packet_handler_next_state <= COMPLETE;
 			
+			when PARSE_TCP_PACKET0 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET1;
+			when PARSE_TCP_PACKET1 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET2;
+			when PARSE_TCP_PACKET2 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET3;
+			when PARSE_TCP_PACKET3 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET4;
+			when PARSE_TCP_PACKET4 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET5;
+			when PARSE_TCP_PACKET5 =>
+				if rx_tcp_source_port = server_port then
+					packet_handler_next_state <= PARSE_TCP_PACKET6;
+				else
+					packet_handler_next_state <= COMPLETE;
+				end if;
+			when PARSE_TCP_PACKET6 =>
+				if rx_tcp_dest_port = tcp_port then
+					packet_handler_next_state <= PARSE_TCP_PACKET7;
+				else
+					packet_handler_next_state <= COMPLETE;
+				end if;
+			when PARSE_TCP_PACKET7 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET8;
+			when PARSE_TCP_PACKET8 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET9;
+			when PARSE_TCP_PACKET9 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET10;
+			when PARSE_TCP_PACKET10 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET11;
+			when PARSE_TCP_PACKET11 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET12;
+			when PARSE_TCP_PACKET12 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET13;
+			when PARSE_TCP_PACKET13 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET14;
+			when PARSE_TCP_PACKET14 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET15;
+			when PARSE_TCP_PACKET15 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET16;
+			when PARSE_TCP_PACKET16 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET17;
+			when PARSE_TCP_PACKET17 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET18;
+			when PARSE_TCP_PACKET18 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET19;	
+			when PARSE_TCP_PACKET19 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET20;	
+			when PARSE_TCP_PACKET20 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET21;
+			when PARSE_TCP_PACKET21 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET22;
+			when PARSE_TCP_PACKET22 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET23;
+			when PARSE_TCP_PACKET23 =>
+				packet_handler_next_state <= PARSE_TCP_PACKET24;
+			when PARSE_TCP_PACKET24 =>
+				if rx_tcp_option = X"03" then
+					packet_handler_next_state <= PARSE_TCP_PACKET25;
+				elsif rx_tcp_option = X"01" then
+					packet_handler_next_state <= PARSE_TCP_PACKET26;
+				elsif tcp_option_addr > total_packet_length then
+					packet_handler_next_state <= COMPLETE;
+				else
+					packet_handler_next_state <= PARSE_TCP_PACKET27;
+				end if;
+				
+				if rx_tcp_flags = X"12" then
+					packet_handler_next_state <= CHECK_TCP_SYN_ACK_PACKET0;
+				else
+				
+				end if;
+				
 			when COMPLETE =>
 				packet_handler_next_state <= IDLE;
 		end case;
@@ -1635,6 +1736,10 @@ begin
 				rx_packet_ram_rd_addr <= "000"&X"19";
 			elsif packet_handler_state = HANDLE_ARP_REPLY0 then
 				rx_packet_ram_rd_addr <= "000"&X"1A";
+			elsif packet_handler_state = PARSE_TCP_PACKET0 then
+				rx_packet_ram_rd_addr <= "000"&X"26";
+			elsif packet_handler_state = PARSE_TCP_PACKET20 then
+				rx_packet_ram_rd_addr <= tcp_option_addr;
 			else
 				rx_packet_ram_rd_addr <= rx_packet_ram_rd_addr + 1;
 			end if;
@@ -1782,6 +1887,60 @@ begin
 			elsif packet_handler_state = HANDLE_ARP_REPLY7 then
 				server_mac_addr(7 downto 0) <= rx_packet_rd_data;
 			end if;
+			if packet_handler_state = PARSE_TCP_PACKET2 then
+				rx_tcp_source_port(15 downto 8) <= rx_packet_rd_data; 
+			elsif packet_handler_state = PARSE_TCP_PACKET3 then
+				rx_tcp_source_port(7 downto 0) <= rx_packet_rd_data;
+			end if;
+			if packet_handler_state = PARSE_TCP_PACKET4 then
+				rx_tcp_dest_port(15 downto 8) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_TCP_PACKET5 then
+				rx_tcp_dest_port(7 downto 0) <= rx_packet_rd_data;
+			end if;
+			if packet_handler_state = PARSE_TCP_PACKET6 then
+				rx_tcp_seq_number(31 downto 24) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_TCP_PACKET7 then
+				rx_tcp_seq_number(23 downto 16) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_TCP_PACKET8 then
+				rx_tcp_seq_number(15 downto 8) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_TCP_PACKET9 then
+				rx_tcp_seq_number(7 downto 0) <= rx_packet_rd_data;
+			end if;
+			if packet_handler_state = PARSE_TCP_PACKET10 then
+				rx_tcp_ack_number(31 downto 24) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_TCP_PACKET11 then
+				rx_tcp_ack_number(23 downto 16) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_TCP_PACKET12 then
+				rx_tcp_ack_number(15 downto 8) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_TCP_PACKET13 then
+				rx_tcp_ack_number(7 downto 0) <= rx_packet_rd_data;
+			end if;
+			if packet_handler_state = PARSE_TCP_PACKET15 then
+				rx_tcp_flags <= rx_packet_rd_data;
+			end if;
+			if packet_handler_state = PARSE_TCP_PACKET16 then
+				rx_tcp_window_size(15 downto 8) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_TCP_PACKET17 then
+				rx_tcp_window_size(7 downto 0) <= rx_packet_rd_data;
+			end if;
+			if packet_handler_state = PARSE_TCP_PACKET18 then
+				rx_tcp_checksum(15 downto 8) <= rx_packet_rd_data;
+			elsif packet_handler_state = PARSE_TCP_PACKET19 then
+				rx_tcp_checksum(7 downto 0) <= rx_packet_rd_data;
+			end if;
+			if packet_handler_state = PARSE_TCP_PACKET19 then
+				tcp_option_addr <= "000"&X"3A";
+			elsif packet_handler_state = PARSE_TCP_PACKET then
+				tcp_option_addr <= tcp_option_addr + 1;
+			end if;
+			if packet_handler_state = PARSE_TCP_PACKET22 then
+				rx_tcp_option <= rx_packet_rd_data;
+			end if;
+			if packet_handler_state = PARSE_TCP_PACKET23 then
+				rx_tcp_option_length <= unsigned(rx_packet_rd_data);
+			end if;
+			
+			
 		end if;
 	end process;
 
@@ -2048,6 +2207,11 @@ begin
 			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				window_size <= X"0200";
+			end if;
+			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
+				expecting_syn_ack <= '1';
+			elsif  then
+				expecting_syn_ack <= '0';
 			end if;
 		end if;
 	end process;
