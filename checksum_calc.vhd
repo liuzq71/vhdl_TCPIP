@@ -27,20 +27,24 @@ use IEEE.NUMERIC_STD.ALL;
 --use UNISIM.VComponents.all;
 
 entity checksum_calc is
-    Port ( CLK_IN 				: in  STD_LOGIC;
-           RST_IN 				: in  STD_LOGIC;
-           CHECKSUM_CALC_IN 	: in  STD_LOGIC;
-           START_ADDR_IN 		: in  STD_LOGIC_VECTOR (10 downto 0);
-           COUNT_IN 				: in  STD_LOGIC_VECTOR (10 downto 0);
-           VALUE_IN 				: in  STD_LOGIC_VECTOR (7 downto 0);
-           VALUE_ADDR_OUT 		: out  STD_LOGIC_VECTOR (10 downto 0);
-           CHECKSUM_OUT 		: out STD_LOGIC_VECTOR (15 downto 0);
-           CHECKSUM_DONE_OUT 	: out STD_LOGIC);
+    Port ( CLK_IN 					: in  STD_LOGIC;
+           RST_IN 					: in  STD_LOGIC;
+           CHECKSUM_CALC_IN 		: in  STD_LOGIC;
+           START_ADDR_IN 			: in  STD_LOGIC_VECTOR (10 downto 0);
+           COUNT_IN 					: in  STD_LOGIC_VECTOR (10 downto 0);
+           VALUE_IN 					: in  STD_LOGIC_VECTOR (7 downto 0);
+           VALUE_ADDR_OUT 			: out STD_LOGIC_VECTOR (10 downto 0);
+			  CHECKSUM_INIT_IN		: in  STD_LOGIC_VECTOR (15 downto 0);
+			  CHECKSUM_SET_INIT_IN	: in  STD_LOGIC;
+           CHECKSUM_OUT 			: out STD_LOGIC_VECTOR (15 downto 0);
+           CHECKSUM_DONE_OUT 		: out STD_LOGIC);
 end checksum_calc;
 
 architecture Behavioral of checksum_calc is
 
 type CC_ST is (	IDLE,
+						SET_INITIAL_VALUE0,
+						SET_INITIAL_VALUE1,
 						LOAD_START_ADDR,
 						INC_ADDR0,
 						INC_ADDR1,
@@ -72,11 +76,19 @@ begin
       end if;
    end process;
 
-	NEXT_STATE_DECODE: process (cc_state, CHECKSUM_CALC_IN, count)
+	NEXT_STATE_DECODE: process (cc_state, CHECKSUM_CALC_IN, count, CHECKSUM_SET_INIT_IN)
    begin
       cc_next_state <= cc_state;  --default is to stay in current state
       case (cc_state) is
          when IDLE =>
+				if CHECKSUM_CALC_IN = '1' then
+					cc_next_state <= LOAD_START_ADDR;
+				elsif CHECKSUM_SET_INIT_IN = '1' then
+					cc_next_state <= SET_INITIAL_VALUE0;
+				end if;
+			when SET_INITIAL_VALUE0 =>
+				cc_next_state <= SET_INITIAL_VALUE1;
+			when SET_INITIAL_VALUE1 =>
 				if CHECKSUM_CALC_IN = '1' then
 					cc_next_state <= LOAD_START_ADDR;
 				end if;
@@ -138,6 +150,9 @@ begin
       if rising_edge(CLK_IN) then
 			if cc_state = IDLE then
 				checksum_reg <= (others => '0');
+			elsif cc_state = SET_INITIAL_VALUE0 then
+				checksum_reg(15 downto 0) <= unsigned(CHECKSUM_INIT_IN);
+				checksum_reg(24 downto 16) <= (others => '0');
 			elsif cc_state = ADD_VALUE then
 				checksum_reg <= checksum_reg + unsigned(X"00" & value);
 			elsif cc_state = ADD_REMAINDER then
@@ -152,7 +167,7 @@ begin
 	COUNT_PROC: process(CLK_IN)
 	begin
       if rising_edge(CLK_IN) then
-			if cc_state = IDLE and CHECKSUM_CALC_IN = '1' then
+			if (cc_state = IDLE or cc_state = SET_INITIAL_VALUE1) and CHECKSUM_CALC_IN = '1' then
 				count <= unsigned(COUNT_IN);
 			elsif cc_state = ADD_VALUE then
 				count <= count - 1;

@@ -48,6 +48,8 @@ ARCHITECTURE behavior OF TB_checksum_calc IS
          COUNT_IN : IN  std_logic_vector(10 downto 0);
          VALUE_IN : IN  std_logic_vector(7 downto 0);
          VALUE_ADDR_OUT : OUT  std_logic_vector(10 downto 0);
+			CHECKSUM_INIT_IN		: in  STD_LOGIC_VECTOR (15 downto 0);
+			CHECKSUM_SET_INIT_IN	: in  STD_LOGIC;
          CHECKSUM_OUT : OUT  std_logic_vector(15 downto 0);
          CHECKSUM_DONE_OUT : OUT  std_logic
         );
@@ -61,6 +63,9 @@ ARCHITECTURE behavior OF TB_checksum_calc IS
    signal START_ADDR_IN : std_logic_vector(10 downto 0) := (others => '0');
    signal COUNT_IN : std_logic_vector(10 downto 0) := (others => '0');
    signal VALUE_IN : std_logic_vector(7 downto 0) := (others => '0');
+
+	signal CHECKSUM_INIT_IN			: STD_LOGIC_VECTOR (15 downto 0);
+	signal CHECKSUM_SET_INIT_IN	: STD_LOGIC;
 
  	--Outputs
    signal VALUE_ADDR_OUT : std_logic_vector(10 downto 0);
@@ -81,6 +86,8 @@ BEGIN
           COUNT_IN => COUNT_IN,
           VALUE_IN => VALUE_IN,
           VALUE_ADDR_OUT => VALUE_ADDR_OUT,
+			 CHECKSUM_INIT_IN		=> CHECKSUM_INIT_IN,
+			 CHECKSUM_SET_INIT_IN	=> CHECKSUM_SET_INIT_IN,
           CHECKSUM_OUT => CHECKSUM_OUT,
           CHECKSUM_DONE_OUT => CHECKSUM_DONE_OUT
         );
@@ -100,10 +107,26 @@ BEGIN
    begin
       wait for CLK_IN_period*10;
 		
-		COUNT_IN <= "00000011100";
+		COUNT_IN <= "00000000100";
 		VALUE_IN <= X"15";
 		wait for CLK_IN_period;
 		
+		CHECKSUM_CALC_IN <= '0';
+		wait for CLK_IN_period;
+		CHECKSUM_CALC_IN <= '1';
+		wait for CLK_IN_period;
+		CHECKSUM_CALC_IN <= '0';
+		wait for CLK_IN_period;
+	
+		wait for CLK_IN_period*50;
+
+		CHECKSUM_INIT_IN <= X"1234";
+		CHECKSUM_SET_INIT_IN <= '0';
+		wait for CLK_IN_period;
+		CHECKSUM_SET_INIT_IN <= '1';
+		wait for CLK_IN_period;
+		CHECKSUM_SET_INIT_IN <= '0';
+		wait for CLK_IN_period;
 		CHECKSUM_CALC_IN <= '0';
 		wait for CLK_IN_period;
 		CHECKSUM_CALC_IN <= '1';

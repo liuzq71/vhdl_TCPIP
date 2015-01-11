@@ -81,15 +81,17 @@ architecture Behavioral of eth_mod is
 	END COMPONENT;
 	
 	COMPONENT checksum_calc
-    Port ( CLK_IN 				: in  STD_LOGIC;
-           RST_IN 				: in  STD_LOGIC;
-           CHECKSUM_CALC_IN 	: in  STD_LOGIC;
-           START_ADDR_IN 		: in  STD_LOGIC_VECTOR (10 downto 0);
-           COUNT_IN 				: in  STD_LOGIC_VECTOR (10 downto 0);
-           VALUE_IN 				: in  STD_LOGIC_VECTOR (7 downto 0);
-           VALUE_ADDR_OUT 		: out  STD_LOGIC_VECTOR (10 downto 0);
-           CHECKSUM_OUT 		: out STD_LOGIC_VECTOR (15 downto 0);
-           CHECKSUM_DONE_OUT 	: out STD_LOGIC);
+    Port ( CLK_IN 					: in  STD_LOGIC;
+           RST_IN 					: in  STD_LOGIC;
+           CHECKSUM_CALC_IN 		: in  STD_LOGIC;
+           START_ADDR_IN 			: in  STD_LOGIC_VECTOR (10 downto 0);
+           COUNT_IN 					: in  STD_LOGIC_VECTOR (10 downto 0);
+           VALUE_IN 					: in  STD_LOGIC_VECTOR (7 downto 0);
+           VALUE_ADDR_OUT 			: out  STD_LOGIC_VECTOR (10 downto 0);
+			  CHECKSUM_INIT_IN		: in  STD_LOGIC_VECTOR (15 downto 0);
+			  CHECKSUM_SET_INIT_IN	: in  STD_LOGIC;
+           CHECKSUM_OUT 			: out STD_LOGIC_VECTOR (15 downto 0);
+           CHECKSUM_DONE_OUT 		: out STD_LOGIC);
 	END COMPONENT;
 	
 	COMPONENT lfsr32_mod
@@ -132,12 +134,14 @@ constant C_icmp_reply_frame_addr 	: std_logic_vector(11 downto 0) := X"0AB";
 constant C_dhcp_discover_frame_addr : std_logic_vector(11 downto 0) := X"124";
 constant C_dhcp_request_frame_addr 	: std_logic_vector(11 downto 0) := X"286";
 constant C_arp_request_frame_addr 	: std_logic_vector(11 downto 0) := X"467";
+constant C_tcp_packet_frame_addr 	: std_logic_vector(11 downto 0) := X"492";
 
 constant C_arp_reply_length 		: std_logic_vector(15 downto 0) := X"002A";
 constant C_icmp_reply_length 		: std_logic_vector(15 downto 0) := X"0062";
 constant C_dhcp_discover_length 	: std_logic_vector(15 downto 0) := X"0156";
 constant C_dhcp_request_length 	: std_logic_vector(15 downto 0) := X"015C";
 constant C_arp_request_length 	: std_logic_vector(15 downto 0) := X"002A";
+constant C_tcp_packet_length 		: std_logic_vector(15 downto 0) := X"004A";
 
 constant C_ARP_Packet_Type 		: std_logic_vector(15 downto 0) := X"0806";
 constant C_IP_Packet_Type 			: std_logic_vector(15 downto 0) := X"0800";
@@ -147,6 +151,7 @@ constant C_IPV4_Protocol_Number	: std_logic_vector(3 downto 0) := X"4";
 constant C_DHCP_Source_Port		: std_logic_vector(15 downto 0) := X"0043";
 constant C_DHCP_Dest_Port			: std_logic_vector(15 downto 0) := X"0044";
 constant C_dhcp_magic_cookie		: std_logic_vector(31 downto 0) := X"63825363";
+constant C_tcp_syn_flags			: std_logic_vector(7 downto 0) := X"02";
 
 constant C_phy_rd_delay_count 	: std_logic_vector(8 downto 0) := "1"&X"F4";
 constant C_ICMP_Ping_Length 		: std_logic_vector(15 downto 0) := X"0054";
@@ -198,7 +203,7 @@ signal ping_enable 	: std_logic := '1';
 signal dhcp_enable 	: std_logic := '1';
 signal dhcp_addr_locked 	: std_logic := '0';
 
-signal server_ip_addr : std_logic_vector(31 downto 0) := X"00000000";
+signal server_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100";
 signal server_mac_addr : std_logic_vector(47 downto 0) := X"000000000000";
 
 signal tx_packet_frame_addr :unsigned(11 downto 0);
@@ -218,6 +223,8 @@ signal calc_checksum, checksum_calc_done : std_logic := '0';
 signal checksum_start_addr, checksum_addr, checksum_wr_addr : std_logic_vector(10 downto 0);
 signal checksum_count : std_logic_vector(10 downto 0);
 signal checksum : std_logic_vector(15 downto 0);
+signal checksum_initial_value : std_logic_vector(15 downto 0);
+signal checksum_set_initial_value : std_logic;
 
 signal command : std_logic_vector(7 downto 0);
 signal poll_interrupt_reg, command_waiting : std_logic;
@@ -236,10 +243,18 @@ signal dhcp_option, dhcp_option_length, dhcp_message_type : std_logic_vector(7 d
 signal packet_definition_addr : std_logic_vector(11 downto 0);
 signal packet_definition_data : std_logic_vector(15 downto 0);
 
+signal tcp_port 		: std_logic_vector(15 downto 0) := (others => '0');
+signal server_port 	: std_logic_vector(15 downto 0) := X"0DA2";
+signal tcp_sequence_number, tcp_acknowledge_number : std_logic_vector(31 downto 0) := (others => '0');
+signal tcp_flags : std_logic_vector(7 downto 0) := (others => '0');
+signal window_size : std_logic_vector(15 downto 0) := X"0200";
+signal send_tcp_svn_packet : std_logic := '0';
+
 type ETH_ST is (	IDLE,
 						PARSE_COMMAND,
 						TRIGGER_DHCP_DISCOVER,
 						TRIGGER_ARP_REQUEST,
+						TRIGGER_NEW_TCP_CONNECTION,
 						READ_VERSION0,
 						READ_VERSION1,
 						READ_VERSION2,
@@ -439,6 +454,7 @@ type TX_PACKET_CONFIG_ST is (	IDLE,
 										INIT_ICMP_REPLY_METADATA,
 										INIT_DHCP_DISCOVER_METADATA,
 										INIT_DHCP_REQUEST_METADATA,
+										INIT_TCP_SYN_REQUEST_METADATA,
 										READ_PACKET_BYTE0,
 										READ_PACKET_BYTE1,
 										HANDLE_PACKET_INSTRUCTION0,
@@ -453,6 +469,9 @@ type TX_PACKET_CONFIG_ST is (	IDLE,
 										SET_CHECKSUM_WR_ADDR_MSB,
 										MOVE_TX_PACKET_WR_ADDR,
 										SET_NEW_TRANSACTION_ID,
+										SET_CHECKSUM_START_VAL_LSB,
+										SET_CHECKSUM_START_VAL_MSB,
+										TRIGGER_CHECKSUM_LOAD_INITIAL_VALUE,
 										TRIG_CHECKSUM_CALC,
 										WAIT_FOR_CHECKSUM_CMPLT,
 										COMPLETE
@@ -559,6 +578,8 @@ begin
 					eth_next_state <= TRIGGER_DHCP_DISCOVER;
 				elsif command = X"05" then
 					eth_next_state <= TRIGGER_ARP_REQUEST;
+				elsif command = X"06" then
+					eth_next_state <= TRIGGER_NEW_TCP_CONNECTION;
 				else
 					eth_next_state <= IDLE;
 				end if;
@@ -590,8 +611,9 @@ begin
 			
 			when TRIGGER_DHCP_DISCOVER =>
 				eth_next_state <= IDLE;
-				
 			when TRIGGER_ARP_REQUEST =>
+				eth_next_state <= IDLE;
+			when TRIGGER_NEW_TCP_CONNECTION =>
 				eth_next_state <= IDLE;
 			
 			when READ_VERSION0 =>
@@ -1258,6 +1280,7 @@ begin
 	send_icmp_reply <= '1' when packet_handler_state = TRIGGER_ICMP_PACKET_REPLY else '0';
 	send_dhcp_discover <= '1' when eth_state = TRIGGER_DHCP_DISCOVER else '0';
 	send_dhcp_request <= '1' when packet_handler_state = TRIGGER_DHCP_REQUEST else '0';
+	send_tcp_svn_packet <= '1' when eth_state = TRIGGER_NEW_TCP_CONNECTION else '0';
 
 	PH_NEXT_STATE_DECODE: process (packet_handler_state, handle_rx_packet, rx_packet_status_vector(23), 
 												rx_packet_type, arp_target_ip_addr)
@@ -1803,7 +1826,7 @@ begin
    end process;
 
 	TP_NEXT_STATE_DECODE: process (tx_packet_state, send_arp_reply, send_arp_request, send_icmp_reply, 
-												send_dhcp_discover, send_dhcp_request, frame_rd_cmplt)
+												send_dhcp_discover, send_dhcp_request, frame_rd_cmplt, send_tcp_svn_packet)
    begin
       tx_packet_next_state <= tx_packet_state;  --default is to stay in current state
       case (tx_packet_state) is
@@ -1818,6 +1841,8 @@ begin
 					tx_packet_next_state <= INIT_DHCP_DISCOVER_METADATA;
 				elsif send_dhcp_request = '1' then
 					tx_packet_next_state <= INIT_DHCP_REQUEST_METADATA;
+				elsif send_tcp_svn_packet = '1' then
+					tx_packet_next_state <= INIT_TCP_SYN_REQUEST_METADATA;
 				end if;
 			when INIT_ARP_REPLY_METADATA =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
@@ -1828,6 +1853,8 @@ begin
 			when INIT_DHCP_DISCOVER_METADATA =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			when INIT_DHCP_REQUEST_METADATA =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+			when INIT_TCP_SYN_REQUEST_METADATA =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			when READ_PACKET_BYTE0 =>
 				tx_packet_next_state <= READ_PACKET_BYTE1;
@@ -1860,6 +1887,12 @@ begin
 					tx_packet_next_state <= MOVE_TX_PACKET_WR_ADDR;
 				elsif packet_instruction = X"2E" then
 					tx_packet_next_state <= SET_NEW_TRANSACTION_ID;
+				elsif packet_instruction = X"56" then
+					tx_packet_next_state <= SET_CHECKSUM_START_VAL_LSB;
+				elsif packet_instruction = X"57" then
+					tx_packet_next_state <= SET_CHECKSUM_START_VAL_MSB;
+				elsif packet_instruction = X"58" then
+					tx_packet_next_state <= TRIGGER_CHECKSUM_LOAD_INITIAL_VALUE;
 				else
 					tx_packet_next_state <= HANDLE_PACKET_INSTRUCTION1;
 				end if;
@@ -1897,6 +1930,13 @@ begin
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 
 			when SET_NEW_TRANSACTION_ID =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+				
+			when SET_CHECKSUM_START_VAL_LSB =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+			when SET_CHECKSUM_START_VAL_MSB =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+			when TRIGGER_CHECKSUM_LOAD_INITIAL_VALUE =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 				
 			when COMPLETE =>
@@ -1967,6 +2007,24 @@ begin
 							server_mac_addr(31 downto 24) 			when X"3E",
 							server_mac_addr(39 downto 32) 			when X"3F",
 							server_mac_addr(47 downto 40) 			when X"40",
+							tcp_port(7 downto 0)							when X"41",
+							tcp_port(15 downto 8)						when X"42",
+							server_port(7 downto 0)						when X"43",
+							server_port(15 downto 8)					when X"44",
+							tcp_sequence_number(7 downto 0)			when X"45",
+							tcp_sequence_number(15 downto 8)			when X"46",
+							tcp_sequence_number(23 downto 16)		when X"47",
+							tcp_sequence_number(31 downto 24)		when X"48",
+							tcp_acknowledge_number(7 downto 0)		when X"49",
+							tcp_acknowledge_number(15 downto 8)		when X"50",
+							tcp_acknowledge_number(23 downto 16)	when X"51",
+							tcp_acknowledge_number(31 downto 24)	when X"52",
+							tcp_flags(7 downto 0)						when X"53",
+							window_size(7 downto 0)						when X"54",
+							window_size(15 downto 8)					when X"55",
+							X"00"												when X"56", -- Set initial checksum value
+							X"00"												when X"57", -- Set initial checksum value
+							X"00"												when X"58", -- Load initial checksum value
 							X"00"												when others;
 	
 	RANDOM_VALS_PROC: process(CLK_IN)
@@ -1975,6 +2033,21 @@ begin
 			ip_identification <= lfsr_val(15 downto 0);
 			if tx_packet_state = SET_NEW_TRANSACTION_ID then
 				dhcp_transaction_id <= lfsr_val;
+			end if;
+			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
+				tcp_port <= lfsr_val(15 downto 0);
+			end if;
+			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
+				tcp_sequence_number <= lfsr_val;
+			end if;
+			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
+				tcp_acknowledge_number <= (others => '0');
+			end if;
+			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
+				tcp_flags <= C_tcp_syn_flags;
+			end if;
+			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
+				window_size <= X"0200";
 			end if;
 		end if;
 	end process;
@@ -1992,6 +2065,8 @@ begin
 				tx_packet_frame_addr <= unsigned(C_dhcp_discover_frame_addr);
 			elsif tx_packet_state = INIT_DHCP_REQUEST_METADATA then
 				tx_packet_frame_addr <= unsigned(C_dhcp_request_frame_addr);
+			elsif tx_packet_state = INIT_TCP_SYN_REQUEST_METADATA then
+				tx_packet_frame_addr <= unsigned(C_tcp_packet_frame_addr);
 			elsif tx_packet_state = IDLE then
 				tx_packet_frame_addr <= tx_packet_frame_addr;
 			elsif tx_packet_state = READ_PACKET_BYTE0 then
@@ -2017,6 +2092,8 @@ begin
 				tx_packet_length <= unsigned(C_dhcp_discover_length);
 			elsif tx_packet_state = INIT_DHCP_REQUEST_METADATA then
 				tx_packet_length <= unsigned(C_dhcp_request_length);
+			elsif tx_packet_state = INIT_TCP_SYN_REQUEST_METADATA then
+				tx_packet_length <= unsigned(C_tcp_packet_length);
 			end if;
 			if tx_packet_state = INIT_ARP_REPLY_METADATA then
 				tx_packet_end_pointer <= X"1000" + unsigned(C_arp_reply_length);
@@ -2028,12 +2105,9 @@ begin
 				tx_packet_end_pointer <= X"1000" + unsigned(C_dhcp_discover_length);
 			elsif tx_packet_state = INIT_DHCP_REQUEST_METADATA then
 				tx_packet_end_pointer <= X"1000" + unsigned(C_dhcp_discover_length);
+			elsif tx_packet_state = INIT_TCP_SYN_REQUEST_METADATA then
+				tx_packet_end_pointer <= X"1000" + unsigned(C_tcp_packet_length);
 			end if;
---			if tx_packet_state = READ_PACKET_BYTE0 then
---				tx_packet_frame_data_rd <= '1';
---			else
---				tx_packet_frame_data_rd <= '0';
---			end if;
 			if tx_packet_state = IDLE then
 				doing_tx_packet_config <= '0';
 			else
@@ -2099,21 +2173,34 @@ begin
 			elsif tx_packet_state = SET_CHECKSUM_WR_ADDR_MSB then
 				checksum_wr_addr(10 downto 8) <= frame_data(2 downto 0);
 			end if;
+			if tx_packet_state = SET_CHECKSUM_START_VAL_LSB then
+				checksum_initial_value(7 downto 0) <= frame_data(7 downto 0);
+			end if;
+			if tx_packet_state = SET_CHECKSUM_START_VAL_MSB then
+				checksum_initial_value(15 downto 8) <= frame_data(7 downto 0);
+			end if;
+			if tx_packet_state = TRIGGER_CHECKSUM_LOAD_INITIAL_VALUE then
+				checksum_set_initial_value <= '1';
+			else
+				checksum_set_initial_value <= '0';
+			end if;
 		end if;
 	end process;
 	
 	calc_checksum <= '1' when tx_packet_state = TRIG_CHECKSUM_CALC else '0';
 
 	checksum_calc_mod : checksum_calc
-    Port Map ( CLK_IN 				=> CLK_IN,
-					RST_IN 				=> '0',
-					CHECKSUM_CALC_IN 	=> calc_checksum,
-					START_ADDR_IN 		=> checksum_start_addr,
-					COUNT_IN 			=> checksum_count,
-					VALUE_IN 			=> tx_packet_rd_data2,
-					VALUE_ADDR_OUT 	=> checksum_addr,
-					CHECKSUM_OUT 		=> checksum,
-					CHECKSUM_DONE_OUT => checksum_calc_done);
+    Port Map ( CLK_IN 					=> CLK_IN,
+					RST_IN 					=> '0',
+					CHECKSUM_CALC_IN 		=> calc_checksum,
+					START_ADDR_IN 			=> checksum_start_addr,
+					COUNT_IN 				=> checksum_count,
+					VALUE_IN 				=> tx_packet_rd_data2,
+					VALUE_ADDR_OUT 		=> checksum_addr,
+					CHECKSUM_INIT_IN		=> checksum_initial_value,
+					CHECKSUM_SET_INIT_IN	=> checksum_set_initial_value,
+					CHECKSUM_OUT 			=> checksum,
+					CHECKSUM_DONE_OUT 	=> checksum_calc_done);
 
 ------------------- PACKET DEFINITION ------------------------
 
