@@ -124,13 +124,13 @@ architecture Behavioral of hw_client is
 --				 DATA_B_OUT : out STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0));
 --	END COMPONENT;
 
-	COMPONENT led_mod is
-    Port ( CLK_IN 				: in  STD_LOGIC;
-           LED_STATE_IN 		: in  STD_LOGIC_VECTOR (2 downto 0);
-			  ERROR_CODE_IN		: in	STD_LOGIC_VECTOR (4 downto 0);
-			  ERROR_CODE_EN_IN	: in	STD_LOGIC;
-           LEDS_OUT 				: out  STD_LOGIC_VECTOR (1 downto 0));
-	END COMPONENT;
+--	COMPONENT led_mod is
+--    Port ( CLK_IN 				: in  STD_LOGIC;
+--           LED_STATE_IN 		: in  STD_LOGIC_VECTOR (2 downto 0);
+--			  ERROR_CODE_IN		: in	STD_LOGIC_VECTOR (4 downto 0);
+--			  ERROR_CODE_EN_IN	: in	STD_LOGIC;
+--           LEDS_OUT 				: out  STD_LOGIC_VECTOR (1 downto 0));
+--	END COMPONENT;
 	
 --	COMPONENT sf_mod is
 --    Port ( CLK_IN 				: in  STD_LOGIC;
@@ -260,12 +260,12 @@ begin
 
 --------------------------- UI I/O ------------------------------
 
-	led_mod_inst : led_mod
-    Port Map ( CLK_IN 				=> clk_25MHz,
-					LED_STATE_IN 		=> "001",
-					ERROR_CODE_IN		=> "11001",
-					ERROR_CODE_EN_IN	=> '0',
-					LEDS_OUT 			=> open); -- LED_OUT(1 downto 0));
+--	led_mod_inst : led_mod
+--    Port Map ( CLK_IN 				=> clk_25MHz,
+--					LED_STATE_IN 		=> "001",
+--					ERROR_CODE_IN		=> "11001",
+--					ERROR_CODE_EN_IN	=> '0',
+--					LEDS_OUT 			=> open); -- LED_OUT(1 downto 0));
 
 --	vgaRed <= r&r&r;
 --	vgaGreen <= g&g&g;
@@ -342,7 +342,7 @@ begin
 					  COMMAND_EN_IN		=> buttons_edge(0),
 					  COMMAND_CMPLT_OUT 	=> LED_OUT(0),
 					  ERROR_OUT 			=> open,
-					  DEBUG_IN				=> buttons(2),
+					  DEBUG_IN				=> buttons(1),
 					  DEBUG_OUT				=> sseg_data,
 					  
 					  -- Flash mod ctrl interface
