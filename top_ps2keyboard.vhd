@@ -170,12 +170,11 @@ architecture Behavioral of hw_client is
 			  DEBUG_IN 				: in STD_LOGIC;
 			  DEBUG_OUT				: out  STD_LOGIC_VECTOR (15 downto 0);
 			  
-           -- Flash mod ctrl interface
---			  FRAME_ADDR_OUT 				: out  STD_LOGIC_VECTOR (23 downto 1);
---           FRAME_DATA_IN 				: in  STD_LOGIC_VECTOR (15 downto 0);
---           FRAME_DATA_RD_OUT 			: out  STD_LOGIC;
---           FRAME_DATA_RD_CMPLT_IN 	: in  STD_LOGIC;
-           
+           -- TCP Connection Interface
+			  TCP_RD_DATA_AVAIL_OUT : out STD_LOGIC;
+			  TCP_RD_DATA_EN_IN 		: in STD_LOGIC;
+			  TCP_RD_DATA_OUT 		: out STD_LOGIC_VECTOR (7 downto 0);
+			  
 			  -- Eth SPI interface
 			  SDI_OUT 	: out  STD_LOGIC;
            SDO_IN 	: in  STD_LOGIC;
@@ -218,7 +217,8 @@ begin
 	
 --------------------------- DEBUG LOGIC ------------------------------
 	
-	LED_OUT(7 downto 1) <= (others => '0');
+	LED_OUT(7 downto 2) <= (others => '0');
+	sseg_data(15 downto 8) <= (others => '0');
 	
 	sseg_inst : sseg
 	PORT MAP (	
@@ -343,13 +343,12 @@ begin
 					  COMMAND_CMPLT_OUT 	=> LED_OUT(0),
 					  ERROR_OUT 			=> open,
 					  DEBUG_IN				=> buttons(1),
-					  DEBUG_OUT				=> sseg_data,
+					  DEBUG_OUT				=> open,
 					  
-					  -- Flash mod ctrl interface
---					  FRAME_ADDR_OUT 				=> frame_addr,
---					  FRAME_DATA_IN 				=> frame_data,
---					  FRAME_DATA_RD_OUT 			=> frame_rd,
---					  FRAME_DATA_RD_CMPLT_IN 	=> frame_rd_cmplt,
+					  -- TCP Connection Interface
+					  TCP_RD_DATA_AVAIL_OUT => LED_OUT(1),
+					  TCP_RD_DATA_EN_IN 		=> buttons(2),
+					  TCP_RD_DATA_OUT 		=> sseg_data(7 downto 0),
 					  
 					  -- Eth SPI interface
 					  SDI_OUT 	=> SDO,

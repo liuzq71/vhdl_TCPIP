@@ -39,11 +39,10 @@ entity eth_mod is
 			  DEBUG_IN				: in 	STD_LOGIC;
 			  DEBUG_OUT				: out  STD_LOGIC_VECTOR (15 downto 0);
 			  
-           -- Flash mod ctrl interface
---			  FRAME_ADDR_OUT 				: out  STD_LOGIC_VECTOR (23 downto 1);
---         FRAME_DATA_IN 				: in  STD_LOGIC_VECTOR (15 downto 0);
---         FRAME_DATA_RD_OUT 			: out  STD_LOGIC;
---         FRAME_DATA_RD_CMPLT_IN 	: in  STD_LOGIC;
+           -- TCP Connection Interface
+			  TCP_RD_DATA_AVAIL_OUT : out STD_LOGIC;
+			  TCP_RD_DATA_EN_IN 		: in STD_LOGIC;
+			  TCP_RD_DATA_OUT 		: out STD_LOGIC_VECTOR (7 downto 0);
            
 			  -- Eth SPI interface
 			  SDI_OUT 	: out  STD_LOGIC;
@@ -249,17 +248,26 @@ signal packet_definition_data : std_logic_vector(15 downto 0);
 signal tcp_port 		: std_logic_vector(15 downto 0) := (others => '0');
 signal server_port 	: std_logic_vector(15 downto 0) := X"0DA2";
 signal tcp_sequence_number, tcp_acknowledge_number : unsigned(31 downto 0) := (others => '0');
+signal tcp_sequence_number_p1 : unsigned(31 downto 0) := (others => '0');
 signal tcp_flags : std_logic_vector(7 downto 0) := (others => '0');
 signal window_size : std_logic_vector(15 downto 0) := X"0200";
 signal send_tcp_svn_packet, send_tcp_ack_packet : std_logic := '0';
+signal tcp_connection_active : std_logic := '0';
 
 signal rx_tcp_source_port, rx_tcp_dest_port : std_logic_vector(15 downto 0) := (others => '0');
 signal rx_tcp_seq_number, rx_tcp_ack_number : std_logic_vector(31 downto 0) := (others => '0');
 signal rx_tcp_window_size, rx_tcp_checksum : std_logic_vector(15 downto 0) := (others => '0');
-signal rx_tcp_flags, rx_tcp_option : std_logic_vector(7 downto 0) := (others => '0');
+signal rx_tcp_flags, rx_tcp_option, rx_tcp_header_length : std_logic_vector(7 downto 0) := (others => '0');
 signal rx_tcp_option_length : unsigned(7 downto 0);
 signal rx_tcp_window_shift : std_logic_vector(7 downto 0);
 signal tcp_option_addr : unsigned(10 downto 0);
+
+signal tcp_rx_data_we, tcp_rd_data_available, tcp_data_rd_en : std_logic := '0';
+signal tcp_rx_data_wr_addr : unsigned(8 downto 0) := "000000001";
+signal tcp_rx_data_rd_addr : unsigned(8 downto 0) := (others => '0');
+signal tcp_rx_data_wr_addr_m1 : unsigned(8 downto 0) := (others => '0');
+signal tcp_rx_data : unsigned(7 downto 0) := (others => '0');
+signal tcp_rx_data_rd_data : std_logic_vector(7 downto 0) := (others => '0');
 
 type ETH_ST is (	IDLE,
 						PARSE_COMMAND,
@@ -477,9 +485,13 @@ type PACKET_HANDLER_ST is (	IDLE,
 										PARSE_TCP_PACKET27,
 										CHECK_TCP_SYN_ACK_PACKET0,
 										CHECK_TCP_SYN_ACK_PACKET1,
+										CHECK_TCP_SYN_ACK_PACKET2,
 										CHECK_TCP_PSH_ACK_PACKET0,
 										CHECK_TCP_PSH_ACK_PACKET1,
 										CHECK_TCP_PSH_ACK_PACKET2,
+										CHECK_TCP_PSH_ACK_PACKET3,
+										CHECK_TCP_PSH_ACK_PACKET4,
+										TCP_CONNECTION_CLOSED,
 										TRIGGER_TCP_ACK,
 										COMPLETE
 									);
@@ -1334,7 +1346,7 @@ begin
 															ip_packet_length, udp_source_port, udp_dest_port, dhcp_transaction_id, transaction_id_rd,
 																dhcp_magic_cookie, dhcp_option, dhcp_option_length, dhcp_option_addr, expecting_syn_ack,
 																	dhcp_message_type, expecting_dhcp_offer, expecting_dhcp_ack, rx_tcp_source_port,
-																		server_port, rx_tcp_dest_port, tcp_port, ping_enable)
+																		server_port, rx_tcp_dest_port, tcp_port, ping_enable, rx_tcp_header_length)
    begin
       packet_handler_next_state <= packet_handler_state;  --default is to stay in current state
       case (packet_handler_state) is
@@ -1719,11 +1731,13 @@ begin
 			when CHECK_TCP_SYN_ACK_PACKET0 =>
 				packet_handler_next_state <= CHECK_TCP_SYN_ACK_PACKET1;
 			when CHECK_TCP_SYN_ACK_PACKET1 =>
-				if tcp_sequence_number = unsigned(rx_tcp_ack_number) then
-					packet_handler_next_state <= TRIGGER_TCP_ACK;
+				if tcp_sequence_number_p1 = unsigned(rx_tcp_ack_number) then
+					packet_handler_next_state <= CHECK_TCP_SYN_ACK_PACKET2;
 				else
 					packet_handler_next_state <= COMPLETE;
 				end if;
+			when CHECK_TCP_SYN_ACK_PACKET2 =>
+				packet_handler_next_state <= TRIGGER_TCP_ACK;
 				
 			when CHECK_TCP_PSH_ACK_PACKET0 =>
 				if tcp_sequence_number = unsigned(rx_tcp_ack_number) then
@@ -1738,8 +1752,17 @@ begin
 					packet_handler_next_state <= COMPLETE;
 				end if;
 			when CHECK_TCP_PSH_ACK_PACKET2 =>
-				packet_handler_next_state <= TRIGGER_TCP_ACK;
+				packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET3;
+			when CHECK_TCP_PSH_ACK_PACKET3 =>
+				packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET4;
+			when CHECK_TCP_PSH_ACK_PACKET4 =>
+				if RESIZE(rx_packet_ram_rd_addr, 16) >= total_packet_length then
+					packet_handler_next_state <= TRIGGER_TCP_ACK;
+				end if;
 			
+			when TCP_CONNECTION_CLOSED =>
+				packet_handler_next_state <= COMPLETE;
+				
 			when TRIGGER_TCP_ACK =>
 				packet_handler_next_state <= COMPLETE;
 				
@@ -1785,6 +1808,8 @@ begin
 				rx_packet_ram_rd_addr <= "000"&X"26";
 			elsif packet_handler_state = PARSE_TCP_PACKET20 then
 				rx_packet_ram_rd_addr <= tcp_option_addr;
+			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
+				rx_packet_ram_rd_addr <= "000"&X"3A";
 			else
 				rx_packet_ram_rd_addr <= rx_packet_ram_rd_addr + 1;
 			end if;
@@ -1950,6 +1975,9 @@ begin
 				rx_tcp_ack_number(15 downto 8) <= rx_packet_rd_data;
 			elsif packet_handler_state = PARSE_TCP_PACKET13 then
 				rx_tcp_ack_number(7 downto 0) <= rx_packet_rd_data;
+			end if;
+			if packet_handler_state = PARSE_TCP_PACKET14 then
+				rx_tcp_header_length <= "00"&rx_packet_rd_data(7 downto 2);
 			end if;
 			if packet_handler_state = PARSE_TCP_PACKET15 then
 				rx_tcp_flags <= rx_packet_rd_data;
@@ -2227,6 +2255,8 @@ begin
 							X"00"													when X"57", -- Set initial checksum value
 							X"00"													when X"58", -- Load initial checksum value
 							X"00"													when others;
+							
+	tcp_sequence_number_p1 <= tcp_sequence_number + 1;
 	
 	RANDOM_VALS_PROC: process(CLK_IN)
 	begin
@@ -2240,14 +2270,14 @@ begin
 			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				tcp_sequence_number <= unsigned(lfsr_val);
-			elsif packet_handler_state = CHECK_TCP_SYN_ACK_PACKET0 then
-				tcp_sequence_number <= tcp_sequence_number + 1;
+			elsif packet_handler_state = CHECK_TCP_SYN_ACK_PACKET2 then
+				tcp_sequence_number <= tcp_sequence_number_p1;
 			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				tcp_acknowledge_number <= (others => '0');
-			elsif packet_handler_state = CHECK_TCP_SYN_ACK_PACKET0 then
+			elsif packet_handler_state = CHECK_TCP_SYN_ACK_PACKET2 then
 				tcp_acknowledge_number <= unsigned(rx_tcp_seq_number) + 1;
-			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
+			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET3 then
 				tcp_acknowledge_number <= tcp_acknowledge_number + X"0000000D";
 			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
@@ -2260,8 +2290,13 @@ begin
 			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				expecting_syn_ack <= '1';
-			elsif packet_handler_state = CHECK_TCP_SYN_ACK_PACKET0 then
+			elsif packet_handler_state = CHECK_TCP_SYN_ACK_PACKET2 then
 				expecting_syn_ack <= '0';
+			end if;
+			if packet_handler_state = CHECK_TCP_SYN_ACK_PACKET2 then
+				tcp_connection_active <= '1';
+			elsif packet_handler_state = TCP_CONNECTION_CLOSED then
+				tcp_connection_active <= '0';
 			end if;
 		end if;
 	end process;
@@ -2453,6 +2488,50 @@ begin
 						SEED_IN 		=> X"00000000",
 						SEED_EN_IN 	=> '0',
 						VAL_OUT 		=> lfsr_val);
+
+--------------------- TCP RX DATA ----------------------------
+
+	tcp_data_rd_en <= TCP_RD_DATA_EN_IN;
+	TCP_RD_DATA_AVAIL_OUT <= tcp_rd_data_available;
+	TCP_RD_DATA_OUT <= tcp_rx_data_rd_data;
+
+	process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			if tcp_rx_data_wr_addr_m1 /= tcp_rx_data_rd_addr then
+				tcp_rd_data_available <= '1';
+			else
+				tcp_rd_data_available <= '0';
+			end if;
+			if tcp_data_rd_en = '1' then
+				if tcp_rx_data_wr_addr_m1 /= tcp_rx_data_rd_addr then
+					tcp_rx_data_rd_addr <= tcp_rx_data_rd_addr + 1;
+				end if;
+			end if;
+			if tcp_rx_data_we = '1' then 
+				tcp_rx_data_wr_addr <= tcp_rx_data_wr_addr + 1;
+			end if;
+		end if;
+	end process;
+
+	tcp_rx_data_wr_addr_m1 <= tcp_rx_data_wr_addr - 1;
+	tcp_rx_data_we <= '1' when (packet_handler_next_state = CHECK_TCP_PSH_ACK_PACKET4) else '0';
+
+	TCP_RX_DATA_RAM : TDP_RAM
+		Generic Map (	G_DATA_A_SIZE 	=> rx_packet_rd_data'length,
+							G_ADDR_A_SIZE	=> tcp_rx_data_wr_addr'length,
+							G_RELATION		=> 0, --log2(SIZE_A/SIZE_B)
+							G_INIT_FILE		=> "")
+		Port Map ( CLK_A_IN 	=> CLK_IN,
+				 WE_A_IN 		=> tcp_rx_data_we,
+				 ADDR_A_IN 		=> slv(tcp_rx_data_wr_addr),
+				 DATA_A_IN		=> rx_packet_rd_data,
+				 DATA_A_OUT		=> open,
+				 CLK_B_IN 		=> CLK_IN,
+				 WE_B_IN 		=> '0',
+				 ADDR_B_IN 		=> slv(tcp_rx_data_rd_addr),
+				 DATA_B_IN 		=> X"00",
+				 DATA_B_OUT 	=> tcp_rx_data_rd_data);
 
 end Behavioral;
 
