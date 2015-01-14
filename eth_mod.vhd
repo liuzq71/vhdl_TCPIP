@@ -477,6 +477,9 @@ type PACKET_HANDLER_ST is (	IDLE,
 										PARSE_TCP_PACKET27,
 										CHECK_TCP_SYN_ACK_PACKET0,
 										CHECK_TCP_SYN_ACK_PACKET1,
+										CHECK_TCP_PSH_ACK_PACKET0,
+										CHECK_TCP_PSH_ACK_PACKET1,
+										CHECK_TCP_PSH_ACK_PACKET2,
 										TRIGGER_TCP_ACK,
 										COMPLETE
 									);
@@ -1674,7 +1677,11 @@ begin
 			when PARSE_TCP_PACKET18 =>
 				packet_handler_next_state <= PARSE_TCP_PACKET19;	
 			when PARSE_TCP_PACKET19 =>
-				packet_handler_next_state <= PARSE_TCP_PACKET20;	
+				if rx_tcp_flags(4 downto 0) = "1"&X"2" then -- SYN-ACK PACKET (READ OPTIONS)
+					packet_handler_next_state <= PARSE_TCP_PACKET20;
+				else
+					packet_handler_next_state <= PARSE_TCP_PACKET25;
+				end if;
 			when PARSE_TCP_PACKET20 =>
 				packet_handler_next_state <= PARSE_TCP_PACKET21;
 			when PARSE_TCP_PACKET21 =>
@@ -1694,8 +1701,10 @@ begin
 					packet_handler_next_state <= PARSE_TCP_PACKET27;
 				end if;
 			when PARSE_TCP_PACKET25 =>
-				if rx_tcp_flags = X"12" and expecting_syn_ack = '1' then
+				if rx_tcp_flags(4 downto 0) = "1"&X"2" and expecting_syn_ack = '1' then
 					packet_handler_next_state <= CHECK_TCP_SYN_ACK_PACKET0;
+				elsif rx_tcp_flags(4 downto 0) = "1"&X"8" then
+					packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET0;
 				else
 					packet_handler_next_state <= COMPLETE;
 				end if;
@@ -1715,6 +1724,21 @@ begin
 				else
 					packet_handler_next_state <= COMPLETE;
 				end if;
+				
+			when CHECK_TCP_PSH_ACK_PACKET0 =>
+				if tcp_sequence_number = unsigned(rx_tcp_ack_number) then
+					packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET1;
+				else
+					packet_handler_next_state <= COMPLETE;
+				end if;
+			when CHECK_TCP_PSH_ACK_PACKET1 =>
+				if tcp_acknowledge_number = unsigned(rx_tcp_seq_number) then
+					packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET2;
+				else
+					packet_handler_next_state <= COMPLETE;
+				end if;
+			when CHECK_TCP_PSH_ACK_PACKET2 =>
+				packet_handler_next_state <= TRIGGER_TCP_ACK;
 			
 			when TRIGGER_TCP_ACK =>
 				packet_handler_next_state <= COMPLETE;
@@ -2223,6 +2247,8 @@ begin
 				tcp_acknowledge_number <= (others => '0');
 			elsif packet_handler_state = CHECK_TCP_SYN_ACK_PACKET0 then
 				tcp_acknowledge_number <= unsigned(rx_tcp_seq_number) + 1;
+			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
+				tcp_acknowledge_number <= tcp_acknowledge_number + X"0000000D";
 			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				tcp_flags <= C_tcp_syn_flags;
