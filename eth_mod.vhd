@@ -117,6 +117,7 @@ architecture Behavioral of eth_mod is
 				 DATA_B_OUT : out STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0));
 	END COMPONENT;
 	
+	--COMPONENT Packet_Definition_LX9
 	COMPONENT Packet_Definition
 	  PORT (
 		 clka 	: IN STD_LOGIC;
@@ -1304,7 +1305,6 @@ begin
 	end process;
 
 	rx_packet_ram_we <= '1' when eth_state = COPY_RX_PACKET_TO_BUF3 else '0';
-
 	rx_packet_ram_we_addr <= rx_packet_ram_we_addr_buf when doing_tx_packet_config = '0' else rx_packet_rd2_addr;
 
 	RX_PACKET_RAM : TDP_RAM
@@ -2176,84 +2176,84 @@ begin
 	
 	packet_instruction <= frame_data(15 downto 8);
 	
-	with packet_instruction select 
-		packet_data <= frame_data(7 downto 0) 							when X"00",
-							mac_addr(7 downto 0) 							when X"01",
-							mac_addr(15 downto 8) 							when X"02",
-							mac_addr(23 downto 16) 							when X"03",
-							mac_addr(31 downto 24) 							when X"04",
-							mac_addr(39 downto 32) 							when X"05",
-							mac_addr(47 downto 40) 							when X"06",
-							rx_packet_source_mac(7 downto 0) 			when X"07",
-							rx_packet_source_mac(15 downto 8) 			when X"08",
-							rx_packet_source_mac(23 downto 16) 			when X"09",
-							rx_packet_source_mac(31 downto 24) 			when X"0A",
-							rx_packet_source_mac(39 downto 32) 			when X"0B",
-							rx_packet_source_mac(47 downto 40) 			when X"0C",
-							ip_addr(7 downto 0) 								when X"0D",
-							ip_addr(15 downto 8) 							when X"0E",
-							ip_addr(23 downto 16) 							when X"0F",
-							ip_addr(31 downto 24) 							when X"10",
-							arp_source_ip_addr(7 downto 0) 				when X"11",
-							arp_source_ip_addr(15 downto 8) 				when X"12",
-							arp_source_ip_addr(23 downto 16) 			when X"13",
-							arp_source_ip_addr(31 downto 24) 			when X"14",
-							ip_identification(7 downto 0)					when X"15",
-							ip_identification(15 downto 8)				when X"16",
-							X"00"													when X"17", -- set rx read lower byte
-							X"00"													when X"18", -- set rx read upper byte
-							rx_packet_rd_data2								when X"19",
-							X"00"													when X"20", -- set checksum length lsb
-							X"00"													when X"21", -- set checksum length msb
-							X"00"													when X"22", -- set checksum start addr lsb
-							X"00"													when X"23", -- set checksum start addr msb
-							X"00"													when X"24", -- set checksum wr addr lsb
-							X"00"													when X"25", -- set checksum wr addr msb
-							X"00"													when X"26", -- trigger checksum calc
-							checksum(7 downto 0)  							when X"27",
-							checksum(15 downto 8)  							when X"28",
-							X"00"													when X"29", -- set tx write addr to checksum wr addr
-							dhcp_transaction_id(7 downto 0)				when X"2A",
-							dhcp_transaction_id(15 downto 8)				when X"2B",
-							dhcp_transaction_id(23 downto 16)			when X"2C",
-							dhcp_transaction_id(31 downto 24)			when X"2D",
-							X"00"													when X"2E", -- set new transaction ID
-							dhcp_server_ip_addr(7 downto 0)				when X"2F",
-							dhcp_server_ip_addr(15 downto 8)				when X"30",
-							dhcp_server_ip_addr(23 downto 16)			when X"31",
-							dhcp_server_ip_addr(31 downto 24)			when X"32",
-							dhcp_your_ip_addr(7 downto 0)					when X"33",
-							dhcp_your_ip_addr(15 downto 8)				when X"34",
-							dhcp_your_ip_addr(23 downto 16)				when X"35",
-							dhcp_your_ip_addr(31 downto 24)				when X"36",
-							server_ip_addr(7 downto 0)						when X"37",
-							server_ip_addr(15 downto 8)					when X"38",
-							server_ip_addr(23 downto 16)					when X"39",
-							server_ip_addr(31 downto 24)					when X"3A",
-							server_mac_addr(7 downto 0) 					when X"3B",
-							server_mac_addr(15 downto 8) 					when X"3C",
-							server_mac_addr(23 downto 16) 				when X"3D",
-							server_mac_addr(31 downto 24) 				when X"3E",
-							server_mac_addr(39 downto 32) 				when X"3F",
-							server_mac_addr(47 downto 40) 				when X"40",
-							tcp_port(7 downto 0)								when X"41",
-							tcp_port(15 downto 8)							when X"42",
-							server_port(7 downto 0)							when X"43",
-							server_port(15 downto 8)						when X"44",
-							slv(tcp_sequence_number(7 downto 0))		when X"45",
-							slv(tcp_sequence_number(15 downto 8))		when X"46",
-							slv(tcp_sequence_number(23 downto 16))		when X"47",
-							slv(tcp_sequence_number(31 downto 24))		when X"48",
-							slv(tcp_acknowledge_number(7 downto 0))	when X"49",
-							slv(tcp_acknowledge_number(15 downto 8))	when X"50",
-							slv(tcp_acknowledge_number(23 downto 16))	when X"51",
-							slv(tcp_acknowledge_number(31 downto 24))	when X"52",
-							tcp_flags(7 downto 0)							when X"53",
-							window_size(7 downto 0)							when X"54",
-							window_size(15 downto 8)						when X"55",
-							X"00"													when X"56", -- Set initial checksum value
-							X"00"													when X"57", -- Set initial checksum value
-							X"00"													when X"58", -- Load initial checksum value
+	with packet_instruction(6 downto 0) select 
+		packet_data <= frame_data(7 downto 0) 							when "000"&X"0",
+							mac_addr(7 downto 0) 							when "000"&X"1",
+							mac_addr(15 downto 8) 							when "000"&X"2",
+							mac_addr(23 downto 16) 							when "000"&X"3",
+							mac_addr(31 downto 24) 							when "000"&X"4",
+							mac_addr(39 downto 32) 							when "000"&X"5",
+							mac_addr(47 downto 40) 							when "000"&X"6",
+							rx_packet_source_mac(7 downto 0) 			when "000"&X"7",
+							rx_packet_source_mac(15 downto 8) 			when "000"&X"8",
+							rx_packet_source_mac(23 downto 16) 			when "000"&X"9",
+							rx_packet_source_mac(31 downto 24) 			when "000"&X"A",
+							rx_packet_source_mac(39 downto 32) 			when "000"&X"B",
+							rx_packet_source_mac(47 downto 40) 			when "000"&X"C",
+							ip_addr(7 downto 0) 								when "000"&X"D",
+							ip_addr(15 downto 8) 							when "000"&X"E",
+							ip_addr(23 downto 16) 							when "000"&X"F",
+							ip_addr(31 downto 24) 							when "001"&X"0",
+							arp_source_ip_addr(7 downto 0) 				when "001"&X"1",
+							arp_source_ip_addr(15 downto 8) 				when "001"&X"2",
+							arp_source_ip_addr(23 downto 16) 			when "001"&X"3",
+							arp_source_ip_addr(31 downto 24) 			when "001"&X"4",
+							ip_identification(7 downto 0)					when "001"&X"5",
+							ip_identification(15 downto 8)				when "001"&X"6",
+							X"00"													when "001"&X"7", -- set rx read lower byte
+							X"00"													when "001"&X"8", -- set rx read upper byte
+							rx_packet_rd_data2								when "001"&X"9",
+							X"00"													when "010"&X"0", -- set checksum length lsb
+							X"00"													when "010"&X"1", -- set checksum length msb
+							X"00"													when "010"&X"2", -- set checksum start addr lsb
+							X"00"													when "010"&X"3", -- set checksum start addr msb
+							X"00"													when "010"&X"4", -- set checksum wr addr lsb
+							X"00"													when "010"&X"5", -- set checksum wr addr msb
+							X"00"													when "010"&X"6", -- trigger checksum calc
+							checksum(7 downto 0)  							when "010"&X"7",
+							checksum(15 downto 8)  							when "010"&X"8",
+							X"00"													when "010"&X"9", -- set tx write addr to checksum wr addr
+							dhcp_transaction_id(7 downto 0)				when "010"&X"A",
+							dhcp_transaction_id(15 downto 8)				when "010"&X"B",
+							dhcp_transaction_id(23 downto 16)			when "010"&X"C",
+							dhcp_transaction_id(31 downto 24)			when "010"&X"D",
+							X"00"													when "010"&X"E", -- set new transaction ID
+							dhcp_server_ip_addr(7 downto 0)				when "010"&X"F",
+							dhcp_server_ip_addr(15 downto 8)				when "011"&X"0",
+							dhcp_server_ip_addr(23 downto 16)			when "011"&X"1",
+							dhcp_server_ip_addr(31 downto 24)			when "011"&X"2",
+							dhcp_your_ip_addr(7 downto 0)					when "011"&X"3",
+							dhcp_your_ip_addr(15 downto 8)				when "011"&X"4",
+							dhcp_your_ip_addr(23 downto 16)				when "011"&X"5",
+							dhcp_your_ip_addr(31 downto 24)				when "011"&X"6",
+							server_ip_addr(7 downto 0)						when "011"&X"7",
+							server_ip_addr(15 downto 8)					when "011"&X"8",
+							server_ip_addr(23 downto 16)					when "011"&X"9",
+							server_ip_addr(31 downto 24)					when "011"&X"A",
+							server_mac_addr(7 downto 0) 					when "011"&X"B",
+							server_mac_addr(15 downto 8) 					when "011"&X"C",
+							server_mac_addr(23 downto 16) 				when "011"&X"D",
+							server_mac_addr(31 downto 24) 				when "011"&X"E",
+							server_mac_addr(39 downto 32) 				when "011"&X"F",
+							server_mac_addr(47 downto 40) 				when "100"&X"0",
+							tcp_port(7 downto 0)								when "100"&X"1",
+							tcp_port(15 downto 8)							when "100"&X"2",
+							server_port(7 downto 0)							when "100"&X"3",
+							server_port(15 downto 8)						when "100"&X"4",
+							slv(tcp_sequence_number(7 downto 0))		when "100"&X"5",
+							slv(tcp_sequence_number(15 downto 8))		when "100"&X"6",
+							slv(tcp_sequence_number(23 downto 16))		when "100"&X"7",
+							slv(tcp_sequence_number(31 downto 24))		when "100"&X"8",
+							slv(tcp_acknowledge_number(7 downto 0))	when "100"&X"9",
+							slv(tcp_acknowledge_number(15 downto 8))	when "100"&X"A",
+							slv(tcp_acknowledge_number(23 downto 16))	when "100"&X"B",
+							slv(tcp_acknowledge_number(31 downto 24))	when "100"&X"C",
+							tcp_flags(7 downto 0)							when "100"&X"D",
+							window_size(7 downto 0)							when "100"&X"E",
+							window_size(15 downto 8)						when "100"&X"F",
+							X"00"													when "101"&X"0", -- Set initial checksum value
+							X"00"													when "101"&X"1", -- Set initial checksum value
+							X"00"													when "101"&X"2", -- Load initial checksum value
 							X"00"													when others;
 							
 	tcp_sequence_number_p1 <= tcp_sequence_number + 1;
@@ -2261,7 +2261,7 @@ begin
 	RANDOM_VALS_PROC: process(CLK_IN)
 	begin
 		if rising_edge(CLK_IN) then
-			ip_identification <= lfsr_val(15 downto 0);
+			ip_identification <= lfsr_val(15 downto 0);			-- TODO
 			if tx_packet_state = SET_NEW_TRANSACTION_ID then
 				dhcp_transaction_id <= lfsr_val;
 			end if;
@@ -2453,6 +2453,7 @@ begin
 
 ------------------- PACKET DEFINITION ------------------------
 
+	--Packet_Definition_Mod : Packet_Definition_LX9
 	Packet_Definition_Mod : Packet_Definition
 	  Port Map (
 		 clka 	=> CLK_IN,

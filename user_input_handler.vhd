@@ -81,16 +81,16 @@ architecture Behavioral of user_input_handler is
 				 DATA_B_IN 	: in  STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0);
 				 DATA_B_OUT : out STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0));
 	END COMPONENT;
-
-	COMPONENT FONT_MEM
-	  PORT (
-		 clka : IN STD_LOGIC;
-		 wea : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
-		 addra : IN STD_LOGIC_VECTOR(11 DOWNTO 0);
-		 dina : IN STD_LOGIC_VECTOR(7 DOWNTO 0);
-		 douta : OUT STD_LOGIC_VECTOR(7 DOWNTO 0));
-	END COMPONENT;
-	
+--
+--	COMPONENT FONT_MEM
+--	  PORT (
+--		 clka : IN STD_LOGIC;
+--		 wea : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
+--		 addra : IN STD_LOGIC_VECTOR(11 DOWNTO 0);
+--		 dina : IN STD_LOGIC_VECTOR(7 DOWNTO 0);
+--		 douta : OUT STD_LOGIC_VECTOR(7 DOWNTO 0));
+--	END COMPONENT;
+--	
 subtype slv is std_logic_vector;
 
 constant C_backspace_cmnd : std_logic_vector(7 downto 0) := X"80";
@@ -317,13 +317,13 @@ begin
 				  DATA_B_IN 	=> char_buf_wr_data,
 				  DATA_B_OUT 	=> open);
 
-	Font_Mem_inst : FONT_MEM
-	  PORT MAP (
-		 clka 	=> CLK_IN,
-		 wea 		=> "0",
-		 addra 	=> FONT_ADDR_IN,
-		 dina 	=> (others => '0'),
-		 douta 	=> FONT_DATA_OUT);
+--	Font_Mem_inst : FONT_MEM
+--	  PORT MAP (
+--		 clka 	=> CLK_IN,
+--		 wea 		=> "0",
+--		 addra 	=> FONT_ADDR_IN,
+--		 dina 	=> (others => '0'),
+--		 douta 	=> FONT_DATA_OUT);
 
 end Behavioral;
 
