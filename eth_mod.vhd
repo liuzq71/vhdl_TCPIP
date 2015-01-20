@@ -31,7 +31,7 @@ entity eth_mod is
            RESET_IN 	: in  STD_LOGIC;
 			  
 			  -- Command interface
-           COMMAND_IN			: in  STD_LOGIC_VECTOR (7 downto 0);
+           COMMAND_IN			: in  STD_LOGIC_VECTOR (3 downto 0);
 			  COMMAND_EN_IN		: in 	STD_LOGIC;
            COMMAND_CMPLT_OUT 	: out STD_LOGIC;
            ERROR_OUT 			: out  STD_LOGIC_VECTOR (7 downto 0);
@@ -172,6 +172,7 @@ signal spi_wr_addr, spi_wr_data, spi_rd_addr, spi_data_rd : std_logic_vector(7 d
 signal frame_addr : std_logic_vector(11 downto 0);
 signal frame_data : std_logic_vector(15 downto 0);
 signal frame_data_rd, frame_rd_cmplt, slow_cs_en : std_logic := '0';
+signal network_interface_enabled : std_logic := '0';
 
 signal command_cmplt 	: std_logic := '0';
 signal init_cmnd_addr 	: unsigned(7 downto 0);
@@ -233,7 +234,7 @@ signal checksum : std_logic_vector(15 downto 0);
 signal checksum_initial_value : std_logic_vector(15 downto 0);
 signal checksum_set_initial_value : std_logic;
 
-signal command : std_logic_vector(7 downto 0);
+signal command : std_logic_vector(3 downto 0);
 signal poll_interrupt_reg, command_waiting : std_logic;
 signal poll_counter : unsigned(8 downto 0) := (others => '1');
 
@@ -307,6 +308,7 @@ type ETH_ST is (	IDLE,
 						HANDLE_INIT_CMND3,
 						HANDLE_INIT_CMND4,
 						HANDLE_INIT_CMND5,
+						HANDLE_INIT_CMND6,
 						SERVICE_INTERRUPT0,
 						SERVICE_INTERRUPT1,
 						SERVICE_INTERRUPT2,
@@ -628,19 +630,19 @@ begin
 					eth_next_state <= PARSE_COMMAND;
 				end if;
 			when PARSE_COMMAND =>
-				if command = X"00" then
+				if command = X"0" then
 					eth_next_state <= READ_PHY_STAT;
-				elsif command = X"01" then
+				elsif command = X"1" then
 					eth_next_state <= READ_DUPLEX_MODE;
-				elsif command = X"02" then
+				elsif command = X"2" then
 					eth_next_state <= READ_VERSION0;
-				elsif command = X"03" then
+				elsif command = X"3" then
 					eth_next_state <= HANDLE_INIT_CMND0;
-				elsif command = X"04" then
+				elsif command = X"4" then
 					eth_next_state <= TRIGGER_DHCP_DISCOVER;
-				elsif command = X"05" then
+				elsif command = X"5" then
 					eth_next_state <= TRIGGER_ARP_REQUEST;
-				elsif command = X"06" then
+				elsif command = X"6" then
 					eth_next_state <= TRIGGER_NEW_TCP_CONNECTION;
 				else
 					eth_next_state <= IDLE;
@@ -666,10 +668,12 @@ begin
 				end if;
 			when HANDLE_INIT_CMND5 =>
 				if slv(init_cmnd_addr) = C_init_cmnds_max_addr then
-					eth_next_state <= IDLE;
+					eth_next_state <= HANDLE_INIT_CMND6;
 				else
 					eth_next_state <= HANDLE_INIT_CMND1;
 				end if;
+			when HANDLE_INIT_CMND6 =>
+				eth_next_state <= IDLE;
 			
 			when TRIGGER_DHCP_DISCOVER =>
 				eth_next_state <= IDLE;
@@ -981,7 +985,18 @@ begin
 			end if;
       end if;
    end process;
-
+	
+	SETTINGS_PROC: process(CLK_IN)
+   begin
+      if rising_edge(CLK_IN) then
+			if eth_state = HANDLE_INIT_CMND0 then
+				network_interface_enabled <= '0';
+			elsif eth_state = HANDLE_INIT_CMND6 then
+				network_interface_enabled <= '1'; -- TODO add disable code
+			end if;
+		end if;
+	end process;
+	
 --	FRAME_RD_PROC: process(CLK_IN)
 --   begin
 --      if rising_edge(CLK_IN) then
@@ -2538,6 +2553,17 @@ begin
 				 ADDR_B_IN 		=> slv(tcp_rx_data_rd_addr),
 				 DATA_B_IN 		=> X"00",
 				 DATA_B_OUT 	=> tcp_rx_data_rd_data);
+
+	--- DATA I/O ---
+	
+	process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			if ADDR_IN = X"00" then
+				DATA_OUT <= "0000000" & network_interface_enabled;
+			end if;
+		end if;
+	end process;
 
 end Behavioral;
 

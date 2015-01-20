@@ -94,6 +94,10 @@ architecture Behavioral of vault is
 				  FONT_DATA_OUT 	: out  STD_LOGIC_VECTOR (7 downto 0);
 				  CURSORPOS_X_OUT : out  STD_LOGIC_VECTOR (7 downto 0);
 				  CURSORPOS_Y_OUT : out  STD_LOGIC_VECTOR (7 downto 0);
+				  ADDR_OUT			: out STD_LOGIC_VECTOR(7 downto 0);
+				  DATA_IN			: in STD_LOGIC_VECTOR(7 downto 0);
+				  ETH_COMMAND_OUT	: out STD_LOGIC_VECTOR(3 downto 0);
+				  ETH_COMMAND_EN	: out STD_LOGIC;
 				  DEBUG_OUT			: out STD_LOGIC_VECTOR(7 downto 0);
 				  DEBUG_OUT2		: out STD_LOGIC_VECTOR(7 downto 0));
 	END COMPONENT;
@@ -111,7 +115,7 @@ architecture Behavioral of vault is
            RESET_IN 	: in  STD_LOGIC;
 			  
 			  -- Command interface
-           COMMAND_IN			: in  STD_LOGIC_VECTOR (7 downto 0);
+           COMMAND_IN			: in  STD_LOGIC_VECTOR (3 downto 0);
 			  COMMAND_EN_IN		: in 	STD_LOGIC;
            COMMAND_CMPLT_OUT 	: out STD_LOGIC;
            ERROR_OUT 			: out  STD_LOGIC_VECTOR (7 downto 0);
@@ -159,6 +163,10 @@ signal debug_wr_data : std_logic_vector(7 downto 0) := (others => '0');
 signal buttons, buttons_prev, buttons_edge	: std_logic_vector(3 downto 0) := (others => '0');
 signal debounce_count								: unsigned(15 downto 0) := (others => '0');
 
+signal data_bus, addr_bus 	: std_logic_vector(7 downto 0) := (others => '0');
+signal eth_command 			: std_logic_vector(3 downto 0);
+signal eth_command_en 		: std_logic;
+	
 begin
 	
 	clk_mod_Inst : clk_mod
@@ -251,11 +259,17 @@ begin
 				FONT_DATA_OUT 		=> font_data,
 				CURSORPOS_X_OUT 	=> ocrx,
 				CURSORPOS_Y_OUT 	=> ocry,
-				DEBUG_OUT			=> sseg_data(15 downto 8),
-				DEBUG_OUT2			=> sseg_data(7 downto 0));
+				ADDR_OUT				=> addr_bus,
+				DATA_IN				=> data_bus,
+				ETH_COMMAND_OUT	=> eth_command,
+			   ETH_COMMAND_EN		=> eth_command_en,
+				DEBUG_OUT			=> open,
+				DEBUG_OUT2			=> open);
 				
 ------------------------- Ethernet I/O --------------------------------
 
+	sseg_data(15 downto 8) <= addr_bus;
+	sseg_data(7 downto 0) <= data_bus;
 	RESET <= '0';
 
 	eth_mod_inst : eth_mod
@@ -263,14 +277,14 @@ begin
 						RESET_IN => '0',
 				  
 					  -- Command interface
-					  COMMAND_IN			=> SW_IN,
-					  COMMAND_EN_IN		=> buttons_edge(0),
+					  COMMAND_IN			=> eth_command,
+					  COMMAND_EN_IN		=> eth_command_en,
 					  COMMAND_CMPLT_OUT 	=> LED_OUT(2),
 					  ERROR_OUT 			=> open,
 					  
 					  -- Data Interface
-					  ADDR_IN 	=> X"00",
-					  DATA_OUT 	=> open,
+					  ADDR_IN 	=> addr_bus,
+					  DATA_OUT 	=> data_bus,
 					  
 					  DEBUG_IN	=> buttons(1),
 					  DEBUG_OUT	=> open,
