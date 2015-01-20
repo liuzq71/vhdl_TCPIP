@@ -81,55 +81,115 @@ architecture Behavioral of user_input_handler is
 				 DATA_B_IN 	: in  STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0);
 				 DATA_B_OUT : out STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0));
 	END COMPONENT;
---
---	COMPONENT FONT_MEM
---	  PORT (
---		 clka : IN STD_LOGIC;
---		 wea : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
---		 addra : IN STD_LOGIC_VECTOR(11 DOWNTO 0);
---		 dina : IN STD_LOGIC_VECTOR(7 DOWNTO 0);
---		 douta : OUT STD_LOGIC_VECTOR(7 DOWNTO 0));
---	END COMPONENT;
---	
+
+	COMPONENT FONT_MEM
+	  PORT (
+		 clka : IN STD_LOGIC;
+		 wea : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
+		 addra : IN STD_LOGIC_VECTOR(11 DOWNTO 0);
+		 dina : IN STD_LOGIC_VECTOR(7 DOWNTO 0);
+		 douta : OUT STD_LOGIC_VECTOR(7 DOWNTO 0));
+	END COMPONENT;
+	
 subtype slv is std_logic_vector;
 
-constant C_backspace_cmnd : std_logic_vector(7 downto 0) := X"80";
-constant C_esc_cmnd : std_logic_vector(7 downto 0) 		:= X"81";
-constant C_enter_cmnd : std_logic_vector(7 downto 0) 		:= X"82";
+constant C_backspace_cmnd 	: std_logic_vector(7 downto 0) := X"80";
+constant C_esc_cmnd 			: std_logic_vector(7 downto 0) := X"81";
+constant C_enter_cmnd 		: std_logic_vector(7 downto 0) := X"82";
+constant C_new_line_cmnd 	: std_logic_vector(7 downto 0) := X"83";
+constant C_clear_cmnd 		: std_logic_vector(7 downto 0) := X"84";
 
 constant C_space_char : std_logic_vector(7 downto 0) := X"20";
 
-constant C_max_char			: std_logic_vector(11 downto 0) := X"C2F"; -- 3119 (zero indexed)
-constant C_page_height 		: std_logic_vector(7 downto 0) := X"26"; -- 39 (zero indexed)
-constant C_page_width  		: std_logic_vector(7 downto 0) := X"4F"; -- 80 (zero indexed)
-constant C_page_width_p1 	: std_logic_vector(7 downto 0) := X"50"; -- 80
+constant C_max_char			: std_logic_vector(11 downto 0) 	:= X"C2F"; -- 3119 (zero indexed)
+constant C_page_height 		: std_logic_vector(7 downto 0) 	:= X"26"; -- 39 (zero indexed)
+constant C_page_width  		: std_logic_vector(7 downto 0) 	:= X"4F"; -- 80 (zero indexed)
+constant C_page_width_p1 	: std_logic_vector(7 downto 0) 	:= X"50"; -- 80
+
+constant C_clear_command 	: std_logic_vector(15 downto 0) 	:= X"18B0";
+
+type SLV_BYTE_ARRAY32 is array (0 to 31) of std_logic_vector(7 downto 0);
+constant unknown_ram_inst : SLV_BYTE_ARRAY32 := ( X"3A", X"20", X"63", X"6F", X"6D", X"6D", X"61", X"6E", 
+																	X"64", X"20", X"6E", X"6F", X"74", X"20", X"66", X"6F", 
+																	 X"75", X"6E", X"64", X"20", X"20", X"20", X"20", X"20", 
+																	  X"20", X"20", X"20", X"20", X"20", X"20", X"20", X"20");
+signal C_unknown_ram_index_max : std_logic_vector(4 downto 0) := "10011";
+signal unknown_ram_index : unsigned(4 downto 0) := (others => '0');
+
+type SLV_BYTE_ARRAY16 is array (0 to 15) of std_logic_vector(7 downto 0);
+constant prompt_array_inst : SLV_BYTE_ARRAY16 := ( X"20", X"76", X"61", X"75", X"6C", X"74", X"7E", X"24",
+																	 X"20", X"20", X"20", X"20", X"20", X"20", X"20", X"20");
+constant C_prompt_array_length : std_logic_vector(4 downto 0) := "01001";
+signal prompt_ram_index : unsigned(4 downto 0) := (others => '0');
+
+signal startup_count : unsigned(27 downto 0) := X"17D7840"; -- 1 sec @ 25 MHz
 
 signal char_buf_wr, char_cmd_wr : std_logic := '0';
 signal char_buf_wr_addr : unsigned(11 downto 0) := (others => '0');
 signal char_buf_wr_data : std_logic_vector(7 downto 0) := (others => '0');
 signal ocrx, ocry : unsigned(7 downto 0) := (others => '0');
-
-signal keyboard_data, keyboard_data_buf : std_logic_vector(7 downto 0) := (others => '0');
-signal keyboard_rd : std_logic := '0';
-
 signal char_buf_x_coord : unsigned(7 downto 0);
-
 signal debug2 : unsigned(7 downto 0) := (others => '0');
 
-type HANDLE_KEYBOARD_ST is (	IDLE,
-										HANDLE_CHARACTER_S0,
-										HANDLE_CHARACTER_S1,
-										HANDLE_COMMAND,
-										HANDLE_BACKSPACE_S0,
-										HANDLE_BACKSPACE_S1,
-										HANDLE_ENTER_S0,
-										HANDLE_ENTER_S1);
+signal keyboard_data, keyboard_data_buf : std_logic_vector(7 downto 0) := (others => '0');
+signal keyboard_rd, handle_backspace, handle_enter : std_logic := '0';
 
-signal hk_state, hk_next_state : HANDLE_KEYBOARD_ST := IDLE;
+signal command_ram_inst : SLV_BYTE_ARRAY32 := (others => (others => '0'));
+signal command_ram_index, command_ram_index_max : unsigned(4 downto 0) := (others => '0');
+signal command_hash : unsigned(15 downto 0) := (others => '0');
+
+signal screen_wr_buf_byte, screen_rd_buf_byte : std_logic_vector(7 downto 0);
+signal screen_wr_buffer_index : unsigned(4 downto 0) := (others => '0');
+signal screen_buf_we : std_logic := '0';
+signal screen_rd_buffer_index : unsigned(4 downto 0) := (others => '0');
+
+type HANDLE_KEYBOARD_ST is (	STARTUP_DELAY,
+										PRINT_COMMAND_PROMPT0,
+										PRINT_COMMAND_PROMPT1,
+										PRINT_COMMAND_PROMPT2,
+										IDLE,
+										PARSE_KEY_PRESSED,
+										HANDLE_KEY_PRESSED0,
+										HANDLE_KEY_PRESSED1,
+										HANDLE_COMMAND,
+										HANDLE_BACKSPACE0,
+										HANDLE_BACKSPACE1,
+										HANDLE_BACKSPACE2,
+										HANDLE_BACKSPACE3,
+										HANDLE_BACKSPACE4,
+										HANDLE_COMMAND_SUBMIT0,
+										HANDLE_COMMAND_SUBMIT1,
+										HANDLE_COMMAND_SUBMIT2,
+										HANDLE_COMMAND_SUBMIT3,
+										NEW_LINE_W_NEW_PROMPT0,
+										NEW_LINE_W_NEW_PROMPT1,
+										REPORT_UNKNOWN_COMMAND0,
+										REPORT_UNKNOWN_COMMAND1,
+										REPORT_UNKNOWN_COMMAND2,
+										REPORT_UNKNOWN_COMMAND3,
+										REPORT_UNKNOWN_COMMAND4,
+										REPORT_UNKNOWN_COMMAND5,
+										HANDLE_CLEAR_COMMAND0,
+										HANDLE_CLEAR_COMMAND1
+										);
+										
+signal hk_state, hk_next_state : HANDLE_KEYBOARD_ST := STARTUP_DELAY;
+
+type SCREEN_BUF_ST is (		SB_IDLE,
+									SB_PARSE_NEW_BYTE,
+									SB_HANDLE_CHARACTER0,
+									SB_HANDLE_CHARACTER1,
+									SB_HANDLE_COMMAND,
+									SB_HANDLE_BACKSPACE,
+									SB_HANDLE_NEW_LINE,
+									SB_HANDLE_CLEAR);
+
+signal sb_state, sb_next_state : SCREEN_BUF_ST := SB_IDLE;
 
 begin
 
-	debug2 <= unsigned(keyboard_data);
+	DEBUG_OUT <= slv(command_hash(15 downto 8));
+	DEBUG_OUT2 <= slv(command_hash(7 downto 0));
 
 	---- CONVERT UART DATA TO KEYBOARD DATA ----
 
@@ -151,155 +211,354 @@ begin
 
 	---- HANDLE KEYBOARD DATA ----
 
-   SYNC_PROC: process(CLK_IN)
+   HK_SYNC_PROC: process(CLK_IN)
    begin
       if rising_edge(CLK_IN) then
 			hk_state <= hk_next_state;
+			startup_count <= startup_count - 1;
       end if;
    end process;
 	
+	HK_NEXT_STATE_DECODE: process (hk_state, startup_count, handle_backspace, keyboard_rd, prompt_ram_index, keyboard_data,
+												command_ram_index)
+   begin
+      hk_next_state <= hk_state;  --default is to stay in current state
+      case (hk_state) is
+			when STARTUP_DELAY =>
+				if startup_count = X"00000000" then
+					hk_next_state <= PRINT_COMMAND_PROMPT0;
+				end if;
+			when PRINT_COMMAND_PROMPT0 =>
+				hk_next_state <= PRINT_COMMAND_PROMPT1;
+			when PRINT_COMMAND_PROMPT1 =>
+				hk_next_state <= PRINT_COMMAND_PROMPT2;
+			when PRINT_COMMAND_PROMPT2 =>
+				if prompt_ram_index = unsigned(C_prompt_array_length) then
+					hk_next_state <= IDLE;
+				else
+					hk_next_state <= PRINT_COMMAND_PROMPT1;
+				end if;
+         
+			when IDLE =>
+				if keyboard_rd = '1' then
+					hk_next_state <= PARSE_KEY_PRESSED;
+				end if;
+			when PARSE_KEY_PRESSED =>
+				if keyboard_data(7) = '0' then
+					hk_next_state <= HANDLE_KEY_PRESSED0;
+				else
+					hk_next_state <= HANDLE_COMMAND;
+				end if;
+				
+			when HANDLE_KEY_PRESSED0 =>
+				hk_next_state <= HANDLE_KEY_PRESSED1;
+			when HANDLE_KEY_PRESSED1 =>			
+				hk_next_state <= IDLE;
+			
+			when HANDLE_COMMAND =>
+				if keyboard_data = C_backspace_cmnd then
+					hk_next_state <= HANDLE_BACKSPACE0;
+				elsif keyboard_data = C_enter_cmnd then
+					if command_ram_index = "00000" then 
+						hk_next_state <= NEW_LINE_W_NEW_PROMPT0;
+					else
+						hk_next_state <= HANDLE_COMMAND_SUBMIT0;
+					end if;
+				else
+					hk_next_state <= IDLE;
+				end if;
+			
+			when HANDLE_BACKSPACE0 =>
+				if command_ram_index = "00000" then
+					hk_next_state <= IDLE;
+				else
+					hk_next_state <= HANDLE_BACKSPACE1;
+				end if;
+			when HANDLE_BACKSPACE1 =>
+				hk_next_state <= HANDLE_BACKSPACE2;
+			when HANDLE_BACKSPACE2 =>
+				hk_next_state <= HANDLE_BACKSPACE3;
+			when HANDLE_BACKSPACE3 =>
+				hk_next_state <= HANDLE_BACKSPACE4;
+			when HANDLE_BACKSPACE4 =>
+				hk_next_state <= IDLE;
+				
+			when HANDLE_COMMAND_SUBMIT0 =>
+				hk_next_state <= HANDLE_COMMAND_SUBMIT1;
+			when HANDLE_COMMAND_SUBMIT1 =>
+				hk_next_state <= HANDLE_COMMAND_SUBMIT2;
+			when HANDLE_COMMAND_SUBMIT2 =>
+				if command_ram_index = command_ram_index_max then
+					hk_next_state <= HANDLE_COMMAND_SUBMIT3;
+				else
+					hk_next_state <= HANDLE_COMMAND_SUBMIT1;
+				end if;
+			when HANDLE_COMMAND_SUBMIT3 =>
+				if command_hash = unsigned(C_clear_command) then
+					hk_next_state <= HANDLE_CLEAR_COMMAND0;
+				else
+					hk_next_state <= REPORT_UNKNOWN_COMMAND0;
+				end if;
+				
+			when HANDLE_CLEAR_COMMAND0 =>
+				hk_next_state <= HANDLE_CLEAR_COMMAND1;
+			when HANDLE_CLEAR_COMMAND1 =>
+				hk_next_state <= PRINT_COMMAND_PROMPT0;
+				
+			when NEW_LINE_W_NEW_PROMPT0 =>
+				hk_next_state <= NEW_LINE_W_NEW_PROMPT1;
+			when NEW_LINE_W_NEW_PROMPT1 =>
+				hk_next_state <= PRINT_COMMAND_PROMPT0;
+			
+			when REPORT_UNKNOWN_COMMAND0 =>
+				hk_next_state <= REPORT_UNKNOWN_COMMAND1;
+			when REPORT_UNKNOWN_COMMAND1 =>
+				hk_next_state <= REPORT_UNKNOWN_COMMAND2;
+			when REPORT_UNKNOWN_COMMAND2 =>
+				hk_next_state <= REPORT_UNKNOWN_COMMAND3;
+			when REPORT_UNKNOWN_COMMAND3 =>
+				if command_ram_index = command_ram_index_max then
+					hk_next_state <= REPORT_UNKNOWN_COMMAND4;
+				else
+					hk_next_state <= REPORT_UNKNOWN_COMMAND2;
+				end if;
+			when REPORT_UNKNOWN_COMMAND4 =>
+				hk_next_state <= REPORT_UNKNOWN_COMMAND5;
+			when REPORT_UNKNOWN_COMMAND5 =>
+				if unknown_ram_index = unsigned(C_unknown_ram_index_max) then
+					hk_next_state <= NEW_LINE_W_NEW_PROMPT0;
+				else
+					hk_next_state <= REPORT_UNKNOWN_COMMAND4;
+				end if;
+				
+		end case;
+	end process;
+
 	process(CLK_IN)
-	begin
-		if rising_edge(CLK_IN) then
-			if hk_state = IDLE and keyboard_rd = '1' then
-				keyboard_data_buf <= keyboard_data;
+   begin
+      if rising_edge(CLK_IN) then
+			if hk_state = PRINT_COMMAND_PROMPT0 then
+				prompt_ram_index <= "00000";
+			elsif hk_state = PRINT_COMMAND_PROMPT1 then
+				prompt_ram_index <= prompt_ram_index + 1;
+			end if;
+			if hk_state = REPORT_UNKNOWN_COMMAND3 then
+				unknown_ram_index <= "00000";
+			elsif hk_state = REPORT_UNKNOWN_COMMAND4 then
+				unknown_ram_index <= unknown_ram_index + 1;
 			end if;
 		end if;
 	end process;
- 
+	
+	process(CLK_IN)
+   begin
+      if rising_edge(CLK_IN) then
+			if hk_state = PRINT_COMMAND_PROMPT1 then
+				screen_wr_buf_byte <= prompt_array_inst(to_integer(prompt_ram_index));
+			elsif hk_state = HANDLE_KEY_PRESSED0 then
+				screen_wr_buf_byte <= keyboard_data;
+			elsif hk_state = HANDLE_BACKSPACE1 then
+				screen_wr_buf_byte <= C_backspace_cmnd;
+			elsif hk_state = HANDLE_BACKSPACE2 then
+				screen_wr_buf_byte <= X"20";
+			elsif hk_state = HANDLE_BACKSPACE3 then
+				screen_wr_buf_byte <= C_backspace_cmnd;
+			elsif hk_state = NEW_LINE_W_NEW_PROMPT0 then
+				screen_wr_buf_byte <= C_new_line_cmnd;
+			elsif hk_state = REPORT_UNKNOWN_COMMAND0 then
+				screen_wr_buf_byte <= C_new_line_cmnd;
+			elsif hk_state = REPORT_UNKNOWN_COMMAND2 then
+				screen_wr_buf_byte <= command_ram_inst(to_integer(command_ram_index));
+			elsif hk_state = REPORT_UNKNOWN_COMMAND4 then
+				screen_wr_buf_byte <= unknown_ram_inst(to_integer(unknown_ram_index));
+			elsif hk_state = HANDLE_CLEAR_COMMAND0 then
+				screen_wr_buf_byte <= C_clear_cmnd;
+			end if;
+			if hk_state = PRINT_COMMAND_PROMPT2 then
+				screen_wr_buffer_index <= screen_wr_buffer_index + 1;
+			elsif hk_state = HANDLE_KEY_PRESSED1 then
+				screen_wr_buffer_index <= screen_wr_buffer_index + 1;
+			elsif hk_state = HANDLE_BACKSPACE2 then
+				screen_wr_buffer_index <= screen_wr_buffer_index + 1;
+			elsif hk_state = HANDLE_BACKSPACE3 then
+				screen_wr_buffer_index <= screen_wr_buffer_index + 1;
+			elsif hk_state = HANDLE_BACKSPACE4 then
+				screen_wr_buffer_index <= screen_wr_buffer_index + 1;
+			elsif hk_state = NEW_LINE_W_NEW_PROMPT1 then
+				screen_wr_buffer_index <= screen_wr_buffer_index + 1;
+			elsif hk_state = REPORT_UNKNOWN_COMMAND3 then
+				screen_wr_buffer_index <= screen_wr_buffer_index + 1;
+			elsif hk_state = REPORT_UNKNOWN_COMMAND5 then
+				screen_wr_buffer_index <= screen_wr_buffer_index + 1;
+			elsif hk_state = REPORT_UNKNOWN_COMMAND1 then
+				screen_wr_buffer_index <= screen_wr_buffer_index + 1;
+			elsif hk_state = HANDLE_CLEAR_COMMAND1 then
+				screen_wr_buffer_index <= screen_wr_buffer_index + 1;
+			end if;
+			if hk_state = PRINT_COMMAND_PROMPT1 then
+				screen_buf_we <= '1';
+			elsif hk_state = HANDLE_KEY_PRESSED0 then
+				screen_buf_we <= '1';
+			elsif hk_state = HANDLE_BACKSPACE1 then
+				screen_buf_we <= '1';
+			elsif hk_state = HANDLE_BACKSPACE2 then
+				screen_buf_we <= '1';
+			elsif hk_state = HANDLE_BACKSPACE3 then
+				screen_buf_we <= '1';
+			elsif hk_state = NEW_LINE_W_NEW_PROMPT0 then
+				screen_buf_we <= '1';
+			elsif hk_state = REPORT_UNKNOWN_COMMAND0 then
+				screen_buf_we <= '1';
+			elsif hk_state = REPORT_UNKNOWN_COMMAND2 then
+				screen_buf_we <= '1';
+			elsif hk_state = REPORT_UNKNOWN_COMMAND4 then
+				screen_buf_we <= '1';
+			elsif hk_state = HANDLE_CLEAR_COMMAND0 then
+				screen_buf_we <= '1';
+			else
+				screen_buf_we <= '0';
+			end if;
+		end if;
+	end process;
+	
+	process(CLK_IN)
+   begin
+      if rising_edge(CLK_IN) then
+			if hk_state = HANDLE_KEY_PRESSED0 then
+				command_ram_inst(to_integer(command_ram_index)) <= keyboard_data;
+			end if;
+			if hk_state = HANDLE_KEY_PRESSED0 then
+				command_ram_index <= command_ram_index + 1;
+			elsif hk_state = HANDLE_BACKSPACE1 then
+				command_ram_index <= command_ram_index - 1;
+			elsif hk_state = HANDLE_COMMAND_SUBMIT0 then
+				command_ram_index <= "00000";
+			elsif hk_state = HANDLE_COMMAND_SUBMIT1 then
+				command_ram_index <= command_ram_index + 1;
+			elsif hk_state = HANDLE_COMMAND_SUBMIT3 then
+				command_ram_index <= "00000";
+			elsif hk_state = REPORT_UNKNOWN_COMMAND1 then
+				command_ram_index <= "00000";
+			elsif hk_state = REPORT_UNKNOWN_COMMAND2 then
+				command_ram_index <= command_ram_index + 1;
+			elsif hk_state = REPORT_UNKNOWN_COMMAND4 then
+				command_ram_index <= "00000";
+			end if;
+			if hk_state = HANDLE_COMMAND_SUBMIT0 then
+				command_ram_index_max <= command_ram_index;
+			end if;
+			if hk_state = HANDLE_COMMAND_SUBMIT0 then
+				command_hash <= (others => '0');
+			elsif hk_state = HANDLE_COMMAND_SUBMIT1 then
+				command_hash <= command_hash + RESIZE(unsigned(command_ram_inst(to_integer(command_ram_index))), 16);
+			elsif hk_state = HANDLE_COMMAND_SUBMIT2 then
+				command_hash(15 downto 1) <= command_hash(14 downto 0);
+				command_hash(0) <= command_hash(15);
+			end if;
+		end if;
+	end process;
+	
+	screen_buffer : TDP_RAM
+	Generic Map ( G_DATA_A_SIZE 	=> screen_wr_buf_byte'length,
+					  G_ADDR_A_SIZE	=> screen_wr_buffer_index'length,
+					  G_RELATION		=> 0, --log2(SIZE_A/SIZE_B)
+					  G_INIT_FILE		=> "./coe_dir/ascii_space.coe")
+   Port Map ( CLK_A_IN 		=> CLK_IN,
+				  WE_A_IN 		=> screen_buf_we,
+				  ADDR_A_IN 	=> slv(screen_wr_buffer_index),
+				  DATA_A_IN		=> screen_wr_buf_byte,
+				  DATA_A_OUT	=> open,
+				  CLK_B_IN 		=> CLK_IN,
+				  WE_B_IN 		=> '0',
+				  ADDR_B_IN 	=> slv(screen_rd_buffer_index),
+				  DATA_B_IN 	=> X"00",
+				  DATA_B_OUT 	=> screen_rd_buf_byte);
+
+	---- SCREEN MEMORY ----
+
+   SB_SYNC_PROC: process(CLK_IN)
+   begin
+      if rising_edge(CLK_IN) then
+			sb_state <= sb_next_state;
+      end if;
+   end process;
+
+   SB_NEXT_STATE_DECODE: process (sb_state, screen_rd_buffer_index, screen_wr_buffer_index, screen_rd_buf_byte)
+   begin
+      sb_next_state <= sb_state;  --default is to stay in current state
+      case (sb_state) is
+         when SB_IDLE =>
+            if screen_rd_buffer_index /= screen_wr_buffer_index then
+					sb_next_state <= SB_PARSE_NEW_BYTE;
+				end if;
+				
+			when SB_PARSE_NEW_BYTE =>
+				if screen_rd_buf_byte(7) = '0' then
+					sb_next_state <= SB_HANDLE_CHARACTER0;
+				else
+					sb_next_state <= SB_HANDLE_COMMAND;
+				end if;
+         
+			when SB_HANDLE_CHARACTER0 =>
+            sb_next_state <= SB_HANDLE_CHARACTER1;
+			when SB_HANDLE_CHARACTER1 =>
+            sb_next_state <= SB_IDLE;
+				
+         when SB_HANDLE_COMMAND =>
+				if screen_rd_buf_byte = C_backspace_cmnd then
+					sb_next_state <= SB_HANDLE_BACKSPACE;
+				elsif screen_rd_buf_byte = C_new_line_cmnd then
+					sb_next_state <= SB_HANDLE_NEW_LINE;
+				elsif screen_rd_buf_byte = C_clear_cmnd then
+					sb_next_state <= SB_HANDLE_CLEAR;
+				else
+					sb_next_state <= SB_IDLE;
+				end if;
+				
+			when SB_HANDLE_BACKSPACE =>
+				sb_next_state <= SB_IDLE;
+         when SB_HANDLE_NEW_LINE =>
+				sb_next_state <= SB_IDLE;
+			when SB_HANDLE_CLEAR =>
+				if char_buf_wr_addr = X"001" then
+					sb_next_state <= SB_IDLE;
+				end if;
+				
+      end case;
+   end process;
+
 	process(CLK_IN)
 	begin
 		if rising_edge(CLK_IN) then
-			if hk_state = HANDLE_CHARACTER_S0 then
+			if sb_state = SB_HANDLE_CHARACTER0 then
 				char_buf_wr <= '1';
-			elsif hk_state = HANDLE_BACKSPACE_S1 then
+			elsif sb_state = SB_HANDLE_CLEAR then
 				char_buf_wr <= '1';
 			else
 				char_buf_wr <= '0';
 			end if;
-		end if;
-	end process;
-	
-	process(CLK_IN)
-	begin
-		if rising_edge(CLK_IN) then
-			if hk_state = HANDLE_CHARACTER_S0 then
-				char_buf_wr_data <= keyboard_data_buf;
-			elsif hk_state = HANDLE_BACKSPACE_S1 then
-				char_buf_wr_data <= C_space_char;
+			if sb_state = SB_HANDLE_CHARACTER0 then
+				char_buf_wr_data <= screen_rd_buf_byte;
+			elsif sb_state = SB_HANDLE_CLEAR then
+				char_buf_wr_data <= X"20";
 			end if;
-		end if;
-	end process;
-
-	process(CLK_IN)
-	begin
-		if rising_edge(CLK_IN) then
-			if hk_state = HANDLE_CHARACTER_S1 then
+			if sb_state = SB_HANDLE_CHARACTER0 then
+				screen_rd_buffer_index <= screen_rd_buffer_index + 1;
+			elsif sb_state = SB_HANDLE_COMMAND then
+				screen_rd_buffer_index <= screen_rd_buffer_index + 1;
+			end if;
+			char_buf_x_coord <= unsigned(C_page_width_p1) - unsigned(ocrx);
+			if sb_state = SB_HANDLE_CHARACTER1 then
 				char_buf_wr_addr <= char_buf_wr_addr + 1;
-			elsif hk_state = HANDLE_BACKSPACE_S0 then
+			elsif sb_state = SB_HANDLE_BACKSPACE then
 				char_buf_wr_addr <= char_buf_wr_addr - 1;
-			elsif hk_state = HANDLE_ENTER_S1 then
+			elsif sb_state = SB_HANDLE_CLEAR then
+				char_buf_wr_addr <= char_buf_wr_addr - 1;
+			elsif sb_state = SB_HANDLE_NEW_LINE then
 				char_buf_wr_addr <= char_buf_wr_addr + RESIZE(char_buf_x_coord, 12);
 			end if;
 		end if;
 	end process;
-	
-	process(CLK_IN)
-	begin
-		if rising_edge(CLK_IN) then
-			if hk_state = HANDLE_ENTER_S0 then
-				char_buf_x_coord <= unsigned(C_page_width_p1) - unsigned(ocrx);
-			end if;
-		end if;
-	end process;
- 
-   NEXT_STATE_DECODE: process (hk_state, keyboard_rd, keyboard_data(7), keyboard_data_buf)
-   begin
-      hk_next_state <= hk_state;  --default is to stay in current state
-      case (hk_state) is
-         when IDLE =>
-            if keyboard_rd = '1' then
-					if keyboard_data(7) = '0' then
-						if slv(char_buf_wr_addr) /= C_max_char then
-							hk_next_state <= HANDLE_CHARACTER_S0;
-						else
-							hk_next_state <= IDLE;
-						end if;
-					else
-						hk_next_state <= HANDLE_COMMAND;
-					end if;
-            end if;
-         when HANDLE_CHARACTER_S0 =>
-            hk_next_state <= HANDLE_CHARACTER_S1;
-			when HANDLE_CHARACTER_S1 =>
-            hk_next_state <= IDLE;
-         when HANDLE_COMMAND =>
-				if keyboard_data_buf = C_backspace_cmnd then
-					if slv(char_buf_wr_addr) /= X"00" then
-						hk_next_state <= HANDLE_BACKSPACE_S0;
-					else
-						hk_next_state <= IDLE;
-					end if;
-				elsif keyboard_data_buf = C_enter_cmnd then
-					hk_next_state <= HANDLE_ENTER_S0;
-				else
-					hk_next_state <= IDLE;
-				end if;
-			when HANDLE_BACKSPACE_S0 =>
-				hk_next_state <= HANDLE_BACKSPACE_S1;
-			when HANDLE_BACKSPACE_S1 =>
-				hk_next_state <= IDLE;
-			when HANDLE_ENTER_S0 =>
-				hk_next_state <= HANDLE_ENTER_S1;
-			when HANDLE_ENTER_S1 =>
-				hk_next_state <= IDLE;
-         when others =>
-            hk_next_state <= IDLE;
-      end case;      
-   end process;
-
-
-	DEBUG_OUT <= slv(char_buf_x_coord);
-	DEBUG_OUT2 <= slv(debug2);
-	
-	---- HANDLE CURSOR POSITION ----	
-
-	CURSORPOS_X_OUT <= slv(ocrx);
-	CURSORPOS_Y_OUT <= slv(ocry);
-	
-	process(CLK_IN)
-	begin
-		if rising_edge(CLK_IN) then
-			if hk_state = HANDLE_CHARACTER_S1 then
-				if slv(ocrx) = C_page_width and slv(ocry) /= C_page_height then
-					ocrx <= X"00";
-				else
-					ocrx <= ocrx + 1;
-				end if;
-				if slv(ocrx) = C_page_width then
-					if slv(ocry) /= C_page_height then
-						ocry <= ocry + 1;
-					end if;
-				end if;
-			elsif hk_state = HANDLE_BACKSPACE_S1 then
-				if slv(ocrx) = X"00" and slv(ocry) /= X"00" then
-					ocrx <= unsigned(C_page_width);
-				else
-					ocrx <= ocrx - 1;
-				end if;
-				if slv(ocrx) = X"00" then
-					if ocry /= X"00" then
-						ocry <= ocry - 1;
-					end if;
-				end if;
-			elsif hk_state = HANDLE_ENTER_S0 and slv(ocry) /= C_page_height then
-				ocrx <= X"00";
-				ocry <= ocry + 1;
-			end if;
-		end if;
-	end process;
-
-	---- SCREEN MEMORY ----
 
 	char_buf : TDP_RAM
 	Generic Map ( G_DATA_A_SIZE 	=> TEXT_DATA_OUT'length,
@@ -317,13 +576,54 @@ begin
 				  DATA_B_IN 	=> char_buf_wr_data,
 				  DATA_B_OUT 	=> open);
 
---	Font_Mem_inst : FONT_MEM
---	  PORT MAP (
---		 clka 	=> CLK_IN,
---		 wea 		=> "0",
---		 addra 	=> FONT_ADDR_IN,
---		 dina 	=> (others => '0'),
---		 douta 	=> FONT_DATA_OUT);
+	
+	---- HANDLE CURSOR POSITION ----	
+
+	CURSORPOS_X_OUT <= slv(ocrx);
+	CURSORPOS_Y_OUT <= slv(ocry);
+	
+	process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			if sb_state = SB_HANDLE_CHARACTER1 then
+				if slv(ocrx) = C_page_width and slv(ocry) /= C_page_height then
+					ocrx <= X"00";
+				else
+					ocrx <= ocrx + 1;
+				end if;
+				if slv(ocrx) = C_page_width then
+					if slv(ocry) /= C_page_height then
+						ocry <= ocry + 1;
+					end if;
+				end if;
+			elsif sb_state = SB_HANDLE_BACKSPACE then
+				if slv(ocrx) = X"00" and slv(ocry) /= X"00" then
+					ocrx <= unsigned(C_page_width);
+				else
+					ocrx <= ocrx - 1;
+				end if;
+				if slv(ocrx) = X"00" then
+					if ocry /= X"00" then
+						ocry <= ocry - 1;
+					end if;
+				end if;
+			elsif sb_state = SB_HANDLE_NEW_LINE then
+				ocrx <= X"00";
+				ocry <= ocry + 1;
+			elsif sb_state = SB_HANDLE_CLEAR then
+				ocrx <= X"00";
+				ocry <= X"00";
+			end if;
+		end if;
+	end process;
+
+	Font_Mem_inst : FONT_MEM
+	  PORT MAP (
+		 clka 	=> CLK_IN,
+		 wea 		=> "0",
+		 addra 	=> FONT_ADDR_IN,
+		 dina 	=> (others => '0'),
+		 douta 	=> FONT_DATA_OUT);
 
 end Behavioral;
 

@@ -28,7 +28,6 @@ use IEEE.NUMERIC_STD.ALL;
 
 entity eth_mod is
     Port ( CLK_IN 	: in  STD_LOGIC;
-			  CLK2_IN	: in  STD_LOGIC;
            RESET_IN 	: in  STD_LOGIC;
 			  
 			  -- Command interface
@@ -36,6 +35,12 @@ entity eth_mod is
 			  COMMAND_EN_IN		: in 	STD_LOGIC;
            COMMAND_CMPLT_OUT 	: out STD_LOGIC;
            ERROR_OUT 			: out  STD_LOGIC_VECTOR (7 downto 0);
+			  
+			  -- Data Interface
+			  ADDR_IN	: in  STD_LOGIC_VECTOR (7 downto 0);
+			  DATA_OUT	: out  STD_LOGIC_VECTOR (7 downto 0);
+			  
+			  -- Debug Interface
 			  DEBUG_IN				: in 	STD_LOGIC;
 			  DEBUG_OUT				: out  STD_LOGIC_VECTOR (15 downto 0);
 			  
