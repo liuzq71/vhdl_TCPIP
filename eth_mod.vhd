@@ -655,7 +655,7 @@ begin
 			when HANDLE_INIT_CMND2 =>
 				if frame_rd_cmplt = '1' then
 					if frame_data = X"0000" then
-						eth_next_state <= IDLE;
+						eth_next_state <= HANDLE_INIT_CMND6;
 					else
 						eth_next_state <= HANDLE_INIT_CMND3;
 					end if;
@@ -1788,6 +1788,7 @@ begin
 				
 			when COMPLETE =>
 				packet_handler_next_state <= IDLE;
+				
 		end case;
 	end process;
 
@@ -2561,6 +2562,30 @@ begin
 		if rising_edge(CLK_IN) then
 			if ADDR_IN = X"00" then
 				DATA_OUT <= "0000000" & network_interface_enabled;
+			elsif ADDR_IN = X"01" then
+				DATA_OUT <= mac_addr(47 downto 40);
+			elsif ADDR_IN = X"02" then
+				DATA_OUT <= mac_addr(39 downto 32);
+			elsif ADDR_IN = X"03" then
+				DATA_OUT <= mac_addr(31 downto 24);
+			elsif ADDR_IN = X"04" then
+				DATA_OUT <= mac_addr(23 downto 16);
+			elsif ADDR_IN = X"05" then
+				DATA_OUT <= mac_addr(15 downto 8);
+			elsif ADDR_IN = X"06" then
+				DATA_OUT <= mac_addr(7 downto 0);
+			elsif ADDR_IN = X"07" then
+				DATA_OUT <= "0000000" & dhcp_enable;
+			elsif ADDR_IN = X"08" then
+				DATA_OUT <= "0000000" & dhcp_addr_locked;
+			elsif ADDR_IN = X"09" then
+				DATA_OUT <= ip_addr(31 downto 24);
+			elsif ADDR_IN = X"0A" then
+				DATA_OUT <= ip_addr(23 downto 16);
+			elsif ADDR_IN = X"0B" then
+				DATA_OUT <= ip_addr(15 downto 8);
+			elsif ADDR_IN = X"0C" then
+				DATA_OUT <= ip_addr(7 downto 0);
 			end if;
 		end if;
 	end process;

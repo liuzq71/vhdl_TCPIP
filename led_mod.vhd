@@ -31,7 +31,9 @@ entity led_mod is
            LED_STATE_IN 		: in  STD_LOGIC_VECTOR (2 downto 0);
 			  ERROR_CODE_IN		: in	STD_LOGIC_VECTOR (4 downto 0);
 			  ERROR_CODE_EN_IN	: in	STD_LOGIC;
-           LEDS_OUT 				: out  STD_LOGIC_VECTOR (1 downto 0));
+           LEDS_OUT 				: out  STD_LOGIC_VECTOR (1 downto 0);
+			  
+			  CLK_1HZ_OUT			: out STD_LOGIC);
 end led_mod;
 
 architecture Behavioral of led_mod is
@@ -65,6 +67,7 @@ signal error_code_buf, error_code_buf_inv : std_logic_vector(7 downto 0) := (oth
 begin
 
 	LEDS_OUT <= leds;
+	CLK_1HZ_OUT <= clk_div_1sec_en;
 
 	process(CLK_IN)
 	begin

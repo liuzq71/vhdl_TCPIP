@@ -86,20 +86,29 @@ architecture Behavioral of vault is
 	
 	COMPONENT user_input_handler
 		 PORT ( CLK_IN 			: in  STD_LOGIC;
+				  
 				  RX_IN 				: in  STD_LOGIC;
 				  TX_OUT 			: out  STD_LOGIC;
+				  
 				  TEXT_ADDR_IN 	: in  STD_LOGIC_VECTOR (11 downto 0);
 				  TEXT_DATA_OUT 	: out  STD_LOGIC_VECTOR (7 downto 0);
 				  FONT_ADDR_IN 	: in  STD_LOGIC_VECTOR (11 downto 0);
 				  FONT_DATA_OUT 	: out  STD_LOGIC_VECTOR (7 downto 0);
 				  CURSORPOS_X_OUT : out  STD_LOGIC_VECTOR (7 downto 0);
 				  CURSORPOS_Y_OUT : out  STD_LOGIC_VECTOR (7 downto 0);
-				  ADDR_OUT			: out STD_LOGIC_VECTOR(7 downto 0);
-				  DATA_IN			: in STD_LOGIC_VECTOR(7 downto 0);
-				  ETH_COMMAND_OUT	: out STD_LOGIC_VECTOR(3 downto 0);
-				  ETH_COMMAND_EN	: out STD_LOGIC;
-				  DEBUG_OUT			: out STD_LOGIC_VECTOR(7 downto 0);
-				  DEBUG_OUT2		: out STD_LOGIC_VECTOR(7 downto 0));
+				  
+				  ADDR_OUT				: out STD_LOGIC_VECTOR(7 downto 0);
+				  DATA_IN				: in STD_LOGIC_VECTOR(7 downto 0);
+				  
+				  ETH_COMMAND_OUT			: out STD_LOGIC_VECTOR(3 downto 0);
+				  ETH_COMMAND_EN_OUT		: out STD_LOGIC;
+				  ETH_COMMAND_CMPLT_IN	: in STD_LOGIC;
+				  ETH_COMMAND_ERR_IN		: in STD_LOGIC_VECTOR(7 downto 0);
+				  
+				  CLK_1HZ_IN	: in STD_LOGIC;
+				  
+				  DEBUG_OUT		: out STD_LOGIC_VECTOR(7 downto 0);
+				  DEBUG_OUT2	: out STD_LOGIC_VECTOR(7 downto 0));
 	END COMPONENT;
 
 	COMPONENT led_mod is
@@ -107,7 +116,8 @@ architecture Behavioral of vault is
            LED_STATE_IN 		: in  STD_LOGIC_VECTOR (2 downto 0);
 			  ERROR_CODE_IN		: in	STD_LOGIC_VECTOR (4 downto 0);
 			  ERROR_CODE_EN_IN	: in	STD_LOGIC;
-           LEDS_OUT 				: out  STD_LOGIC_VECTOR (1 downto 0));
+           LEDS_OUT 				: out  STD_LOGIC_VECTOR (1 downto 0);
+			  CLK_1HZ_OUT			: out STD_LOGIC);
 	END COMPONENT;
 
 	COMPONENT eth_mod is
@@ -144,6 +154,8 @@ subtype slv is std_logic_vector;
 
 signal clk_25MHz : std_logic;
 
+signal clk_1hz : std_logic;
+
 signal char_addr, font_addr	: std_logic_vector(11 downto 0);
 signal char_data, font_data	: std_logic_vector(7 downto 0);
 signal debug_addr	: std_logic_vector(11 downto 0);
@@ -165,7 +177,8 @@ signal debounce_count								: unsigned(15 downto 0) := (others => '0');
 
 signal data_bus, addr_bus 	: std_logic_vector(7 downto 0) := (others => '0');
 signal eth_command 			: std_logic_vector(3 downto 0);
-signal eth_command_en 		: std_logic;
+signal eth_command_err		: std_logic_vector(7 downto 0);
+signal eth_command_en, eth_command_cmplt : std_logic;
 	
 begin
 	
@@ -175,7 +188,7 @@ begin
 	
 --------------------------- DEBUG LOGIC ------------------------------
 	
-	LED_OUT(7 downto 4) <= (others => '0');
+	LED_OUT(7 downto 3) <= (others => '0');
 	
 	sseg_inst : sseg
 	PORT MAP (	
@@ -222,7 +235,9 @@ begin
 					LED_STATE_IN 		=> "001",
 					ERROR_CODE_IN		=> "11001",
 					ERROR_CODE_EN_IN	=> '0',
-					LEDS_OUT 			=> LED_OUT(1 downto 0));
+					LEDS_OUT 			=> LED_OUT(1 downto 0),
+					
+					CLK_1HZ_OUT			=> clk_1hz);
 
 	vgaRed <= r&r&r;
 	vgaGreen <= g&g&g;
@@ -253,16 +268,24 @@ begin
 				CLK_IN 				=> clk_25MHz,
 				RX_IN 				=> RX_IN,
 				TX_OUT 				=> TX_OUT,
+				
 				TEXT_ADDR_IN 		=> char_addr,
 				TEXT_DATA_OUT 		=> char_data,
 				FONT_ADDR_IN 		=> font_addr,
 				FONT_DATA_OUT 		=> font_data,
 				CURSORPOS_X_OUT 	=> ocrx,
 				CURSORPOS_Y_OUT 	=> ocry,
-				ADDR_OUT				=> addr_bus,
-				DATA_IN				=> data_bus,
-				ETH_COMMAND_OUT	=> eth_command,
-			   ETH_COMMAND_EN		=> eth_command_en,
+				
+				ADDR_OUT					=> addr_bus,
+				DATA_IN					=> data_bus,
+				
+				ETH_COMMAND_OUT		=> eth_command,
+			   ETH_COMMAND_EN_OUT	=> eth_command_en,
+				ETH_COMMAND_CMPLT_IN	=> eth_command_cmplt,
+				ETH_COMMAND_ERR_IN	=> eth_command_err,
+				
+				CLK_1HZ_IN	=> clk_1hz,
+				
 				DEBUG_OUT			=> open,
 				DEBUG_OUT2			=> open);
 				
@@ -279,8 +302,8 @@ begin
 					  -- Command interface
 					  COMMAND_IN			=> eth_command,
 					  COMMAND_EN_IN		=> eth_command_en,
-					  COMMAND_CMPLT_OUT 	=> LED_OUT(2),
-					  ERROR_OUT 			=> open,
+					  COMMAND_CMPLT_OUT 	=> eth_command_cmplt,
+					  ERROR_OUT 			=> eth_command_err,
 					  
 					  -- Data Interface
 					  ADDR_IN 	=> addr_bus,
@@ -290,7 +313,7 @@ begin
 					  DEBUG_OUT	=> open,
 					  
 					  -- TCP Connection Interface
-					  TCP_RD_DATA_AVAIL_OUT => LED_OUT(3),
+					  TCP_RD_DATA_AVAIL_OUT => LED_OUT(2),
 					  TCP_RD_DATA_EN_IN 		=> buttons(2),
 					  TCP_RD_DATA_OUT 		=> open,
 					  
