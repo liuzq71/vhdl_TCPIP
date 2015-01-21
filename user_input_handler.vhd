@@ -208,6 +208,7 @@ signal bin_val : std_logic_vector(7 downto 0) := (others => '0');
 signal bcd_val : std_logic_vector(11 downto 0) := (others => '0');
 
 signal clk_1hz : std_logic := '0';
+signal dhcp_second_count : unsigned(3 downto 0);
 
 type HANDLE_KEYBOARD_ST is (	STARTUP_DELAY,
 										PRINT_COMMAND_PROMPT0,
@@ -275,6 +276,7 @@ type HANDLE_KEYBOARD_ST is (	STARTUP_DELAY,
 										CONNECT_DHCP_COMMAND5,
 										CONNECT_DHCP_COMMAND6,
 										CONNECT_DHCP_COMMAND7,
+										CANCEL_DHCP_CONNECT0,
 										
 										CONNECT_STATIC_COMMAND0,
 										CONNECT_STATIC_COMMAND1,
@@ -441,7 +443,8 @@ begin
 				hk_next_state <= CONNECT_DHCP_COMMAND1;
 			when CONNECT_DHCP_COMMAND1 =>
 				hk_next_state <= PRINT_COMMAND_RESULT0; -- cache CONNECT_DHCP_COMMAND2
-			when CONNECT_DHCP_COMMAND2 =>
+				
+			when CONNECT_DHCP_COMMAND2 => -- TODO RENAME!
 				if clk_1hz = '1' then
 					hk_next_state <= CONNECT_DHCP_COMMAND3;
 				end if;
@@ -450,8 +453,10 @@ begin
 			when CONNECT_DHCP_COMMAND4 =>
 				hk_next_state <= CONNECT_DHCP_COMMAND5;
 			when CONNECT_DHCP_COMMAND5 =>
-				if DATA_IN(0) = '1' then
+				if DATA_IN(0) = '1' or DATA_IN(1) = '1' then
 					hk_next_state <= CONNECT_DHCP_COMMAND6;
+				elsif dhcp_second_count > X"9" then
+					hk_next_state <= CANCEL_DHCP_CONNECT0;
 				else
 					hk_next_state <= CONNECT_DHCP_COMMAND2;
 				end if;
@@ -460,10 +465,13 @@ begin
 			when CONNECT_DHCP_COMMAND7 =>
 				hk_next_state <= PRINT_COMMAND_RESULT0; -- cache NEW_LINE_W_NEW_PROMPT0
 			
+			when CANCEL_DHCP_CONNECT0 =>
+				hk_next_state <= CONNECT_DHCP_COMMAND7;
+			
 			when CONNECT_STATIC_COMMAND0 =>
 				hk_next_state <= CONNECT_STATIC_COMMAND1;
 			when CONNECT_STATIC_COMMAND1 =>
-				hk_next_state <= PRINT_COMMAND_RESULT0; -- TODO
+				hk_next_state <= PRINT_COMMAND_RESULT0; -- cache CONNECT_DHCP_COMMAND2
 				
 			when HANDLE_SHOW_IP_COMMAND0 =>
 				hk_next_state <= PRINT_COMMAND_RESULT0; -- cache HANDLE_SHOW_IP_COMMAND1
@@ -929,6 +937,8 @@ begin
 				screen_msg_addr <= unsigned(C_mac_message_addr);
 			elsif hk_state = CONNECT_DHCP_COMMAND1 then
 				screen_msg_addr <= unsigned(C_local_connect_addr);
+			elsif hk_state = CONNECT_STATIC_COMMAND1 then
+				screen_msg_addr <= unsigned(C_local_connect_addr);
 			elsif hk_state = CONNECT_DHCP_COMMAND6 then
 				screen_msg_addr <= unsigned(C_success_message_addr);
 			elsif hk_state = CONNECT_DHCP_COMMAND7 then
@@ -949,6 +959,8 @@ begin
 			elsif hk_state = HANDLE_SHOW_MAC_COMMAND0 then
 				hk_cached_state <= HANDLE_SHOW_MAC_COMMAND1;
 			elsif hk_state = CONNECT_DHCP_COMMAND1 then
+				hk_cached_state <= CONNECT_DHCP_COMMAND2;
+			elsif hk_state = CONNECT_STATIC_COMMAND1 then
 				hk_cached_state <= CONNECT_DHCP_COMMAND2;
 			elsif hk_state = CONNECT_DHCP_COMMAND6 then
 				hk_cached_state <= NEW_LINE_W_NEW_PROMPT0;
@@ -1038,6 +1050,8 @@ begin
 				eth_command <= X"4";
 			elsif hk_state = CONNECT_STATIC_COMMAND0 then
 				eth_command <= X"5";
+			elsif hk_state = CANCEL_DHCP_CONNECT0 then
+				eth_command <= X"7";
 			end if;
 			if hk_state = HANDLE_NETWORK_INIT_COMMAND0 then
 				eth_command_en <= '1';
@@ -1045,8 +1059,16 @@ begin
 				eth_command_en <= '1';
 			elsif hk_state = CONNECT_STATIC_COMMAND0 then
 				eth_command_en <= '1';
+			elsif hk_state = CANCEL_DHCP_CONNECT0 then
+				eth_command_en <= '1';
 			else
 				eth_command_en <= '0';
+			end if;
+			
+			if hk_state = CONNECT_DHCP_COMMAND0 or hk_state = CONNECT_STATIC_COMMAND0 then
+				dhcp_second_count <= X"0";
+			elsif hk_state = CONNECT_DHCP_COMMAND3 then
+				dhcp_second_count <= dhcp_second_count + 1;
 			end if;
 		end if;
 	end process;

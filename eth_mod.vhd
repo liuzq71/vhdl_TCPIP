@@ -208,8 +208,8 @@ signal ip_addr  		: std_logic_vector(31 downto 0) := X"C0A80166"; 		-- 192.168.1
 signal mac_addr 		: std_logic_vector(47 downto 0) := X"8066F23D547A";
 signal ip_identification : std_logic_vector(15 downto 0);
 signal ping_enable 	: std_logic := '1';
-signal dhcp_enable 	: std_logic := '1';
-signal dhcp_addr_locked 	: std_logic := '0';
+signal dhcp_enable 	: std_logic := '0';
+signal dhcp_addr_locked, static_addr_locked 	: std_logic := '0';
 
 signal server_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100";
 signal server_mac_addr : std_logic_vector(47 downto 0) := X"000000000000";
@@ -258,7 +258,7 @@ signal tcp_sequence_number, tcp_acknowledge_number : unsigned(31 downto 0) := (o
 signal tcp_sequence_number_p1 : unsigned(31 downto 0) := (others => '0');
 signal tcp_flags : std_logic_vector(7 downto 0) := (others => '0');
 signal window_size : std_logic_vector(15 downto 0) := X"0200";
-signal send_tcp_svn_packet, send_tcp_ack_packet : std_logic := '0';
+signal send_tcp_svn_packet, send_tcp_ack_packet, cancel_dhcp_connect : std_logic := '0';
 signal tcp_connection_active : std_logic := '0';
 
 signal rx_tcp_source_port, rx_tcp_dest_port : std_logic_vector(15 downto 0) := (others => '0');
@@ -281,6 +281,7 @@ type ETH_ST is (	IDLE,
 						TRIGGER_DHCP_DISCOVER,
 						TRIGGER_ARP_REQUEST,
 						TRIGGER_NEW_TCP_CONNECTION,
+						TRIGGER_CANCEL_DHCP_CONNECT,
 						READ_VERSION0,
 						READ_VERSION1,
 						READ_VERSION2,
@@ -513,6 +514,7 @@ type TX_PACKET_CONFIG_ST is (	IDLE,
 										INIT_DHCP_DISCOVER_METADATA,
 										INIT_DHCP_REQUEST_METADATA,
 										INIT_TCP_PACKET_METADATA,
+										CANCEL_DHCP_CONNECT_ST,
 										READ_PACKET_BYTE0,
 										READ_PACKET_BYTE1,
 										HANDLE_PACKET_INSTRUCTION0,
@@ -644,6 +646,8 @@ begin
 					eth_next_state <= TRIGGER_ARP_REQUEST;
 				elsif command = X"6" then
 					eth_next_state <= TRIGGER_NEW_TCP_CONNECTION;
+				elsif command = X"7" then
+					eth_next_state <= TRIGGER_CANCEL_DHCP_CONNECT;
 				else
 					eth_next_state <= IDLE;
 				end if;
@@ -680,6 +684,8 @@ begin
 			when TRIGGER_ARP_REQUEST =>
 				eth_next_state <= IDLE;
 			when TRIGGER_NEW_TCP_CONNECTION =>
+				eth_next_state <= IDLE;
+			when TRIGGER_CANCEL_DHCP_CONNECT =>
 				eth_next_state <= IDLE;
 			
 			when READ_VERSION0 =>
@@ -1358,6 +1364,7 @@ begin
 	send_dhcp_request <= '1' when packet_handler_state = TRIGGER_DHCP_REQUEST else '0';
 	send_tcp_svn_packet <= '1' when eth_state = TRIGGER_NEW_TCP_CONNECTION else '0';
 	send_tcp_ack_packet <= '1' when packet_handler_state = TRIGGER_TCP_ACK else '0';
+	cancel_dhcp_connect <= '1' when eth_state = TRIGGER_CANCEL_DHCP_CONNECT else '0';
 
 	PH_NEXT_STATE_DECODE: process (packet_handler_state, handle_rx_packet, rx_packet_status_vector(23), rx_tcp_flags, 
 												rx_packet_type, arp_target_ip_addr, rx_tcp_option, tcp_option_addr, total_packet_length,
@@ -2043,10 +2050,14 @@ begin
 				expecting_dhcp_offer <= '1';
 			elsif tx_packet_state = INIT_DHCP_REQUEST_METADATA then
 				expecting_dhcp_offer <= '0';
+			elsif tx_packet_state = CANCEL_DHCP_CONNECT_ST then
+				expecting_dhcp_offer <= '0';
 			end if;
 			if tx_packet_state = INIT_DHCP_REQUEST_METADATA then
 				expecting_dhcp_ack <= '1';
 			elsif packet_handler_state = HANDLE_DHCP_ACK1 then
+				expecting_dhcp_ack <= '0';
+			elsif tx_packet_state = CANCEL_DHCP_CONNECT_ST then
 				expecting_dhcp_ack <= '0';
 			end if;
 			if eth_state = TRIGGER_DHCP_DISCOVER then
@@ -2058,6 +2069,13 @@ begin
 				expecting_arp_reply <= '1';
 			elsif packet_handler_state = HANDLE_ARP_REPLY1 then
 				expecting_arp_reply <= '0';
+			end if;
+			if packet_handler_state = HANDLE_ARP_REPLY7 then
+				static_addr_locked <= '1';
+			elsif tx_packet_state = INIT_ARP_REQUEST_METADATA then
+				static_addr_locked <= '0';
+			elsif tx_packet_state = CANCEL_DHCP_CONNECT_ST then
+				static_addr_locked <= '0';
 			end if;
       end if;
    end process;	
@@ -2074,7 +2092,7 @@ begin
 
 	TP_NEXT_STATE_DECODE: process (tx_packet_state, send_arp_reply, send_arp_request, send_icmp_reply, 
 												send_dhcp_discover, send_dhcp_request, frame_rd_cmplt, send_tcp_svn_packet,
-													send_tcp_ack_packet)
+													send_tcp_ack_packet, cancel_dhcp_connect)
    begin
       tx_packet_next_state <= tx_packet_state;  --default is to stay in current state
       case (tx_packet_state) is
@@ -2093,7 +2111,11 @@ begin
 					tx_packet_next_state <= INIT_TCP_PACKET_METADATA;
 				elsif send_tcp_ack_packet = '1' then
 					tx_packet_next_state <= INIT_TCP_PACKET_METADATA;
+				elsif cancel_dhcp_connect = '1' then
+					tx_packet_next_state <= CANCEL_DHCP_CONNECT_ST;
 				end if;
+			when CANCEL_DHCP_CONNECT_ST =>
+				tx_packet_next_state <= IDLE;
 			when INIT_ARP_REPLY_METADATA =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			when INIT_ARP_REQUEST_METADATA =>
@@ -2577,7 +2599,7 @@ begin
 			elsif ADDR_IN = X"07" then
 				DATA_OUT <= "0000000" & dhcp_enable;
 			elsif ADDR_IN = X"08" then
-				DATA_OUT <= "0000000" & dhcp_addr_locked;
+				DATA_OUT <= "000000" & static_addr_locked & dhcp_addr_locked;
 			elsif ADDR_IN = X"09" then
 				DATA_OUT <= ip_addr(31 downto 24);
 			elsif ADDR_IN = X"0A" then
