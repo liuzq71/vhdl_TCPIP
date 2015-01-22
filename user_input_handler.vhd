@@ -147,18 +147,19 @@ constant C_show_ping_enabled_command 		: std_logic_vector(15 downto 0) 	:= X"95B
 constant C_set_network_init_command 		: std_logic_vector(15 downto 0) 	:= X"1853";
 constant C_connect_local_command 			: std_logic_vector(15 downto 0) 	:= X"00FE";
 
-signal C_unknown_messge_addr 			: std_logic_vector(8 downto 0) 	:= '1'&X"00";
-signal C_net_enabled_message_addr 	: std_logic_vector(8 downto 0) 	:= '0'&X"00";
-signal C_mac_message_addr 				: std_logic_vector(8 downto 0) 	:= '0'&X"16";
-signal C_local_connect_addr			: std_logic_vector(8 downto 0) 	:= '0'&X"8B";
-
-signal C_init_net_message_addr 		: std_logic_vector(8 downto 0) 	:= '0'&X"00";
-
-signal C_true_message_addr 	: std_logic_vector(8 downto 0) := '1'&X"14";
-signal C_false_message_addr 	: std_logic_vector(8 downto 0) := '1'&X"19";
-signal C_success_message_addr : std_logic_vector(8 downto 0) := '1'&X"1F";
-signal C_failed_message_addr 	: std_logic_vector(8 downto 0) := '1'&X"27";
-signal C_show_ip_addr 			: std_logic_vector(8 downto 0) := '0'&X"33";
+signal C_net_enabled_message_addr 	: std_logic_vector(8 downto 0) := '0'&X"00";
+signal C_mac_message_addr 				: std_logic_vector(8 downto 0) := '0'&X"16";
+signal C_show_ip_setting_addr			: std_logic_vector(8 downto 0) := '0'&X"25";
+signal C_show_ip_addr 					: std_logic_vector(8 downto 0) := '0'&X"33";
+signal C_show_cloud_ip_addr			: std_logic_vector(8 downto 0) := '0'&X"41";
+signal C_local_connect_addr			: std_logic_vector(8 downto 0) := '0'&X"8B";
+signal C_unknown_messge_addr 			: std_logic_vector(8 downto 0) := '1'&X"00";
+signal C_true_message_addr 			: std_logic_vector(8 downto 0) := '1'&X"14";
+signal C_false_message_addr 			: std_logic_vector(8 downto 0) := '1'&X"19";
+signal C_success_message_addr 		: std_logic_vector(8 downto 0) := '1'&X"1F";
+signal C_failed_message_addr 			: std_logic_vector(8 downto 0) := '1'&X"27";
+signal C_dynamic_addr 					: std_logic_vector(8 downto 0) := '1'&X"2E";
+signal C_static_addr 					: std_logic_vector(8 downto 0) := '1'&X"36";
 
 signal C_end_of_message_char : std_logic_vector(7 downto 0) := X"FF";
 
@@ -176,6 +177,7 @@ signal char_buf_wr_data : std_logic_vector(7 downto 0) := (others => '0');
 signal ocrx, ocry : unsigned(7 downto 0) := (others => '0');
 signal char_buf_x_coord : unsigned(7 downto 0);
 signal debug2 : unsigned(7 downto 0) := (others => '0');
+signal show_ip_start_addr : std_logic_vector(7 downto 0) := (others => '0');
 
 signal keyboard_data, keyboard_data_buf : std_logic_vector(7 downto 0) := (others => '0');
 signal keyboard_rd, handle_backspace, handle_enter : std_logic := '0';
@@ -254,6 +256,8 @@ type HANDLE_KEYBOARD_ST is (	STARTUP_DELAY,
 										HANDLE_SHOW_MAC_COMMAND6,
 										HANDLE_SHOW_MAC_COMMAND7,
 										HANDLE_SHOW_MAC_COMMAND8,
+										HANDLE_SHOW_MY_IP_COMMAND,
+										HANDLE_SHOW_CLOUD_IP_COMMAND,
 										HANDLE_SHOW_IP_COMMAND0,
 										HANDLE_SHOW_IP_COMMAND1,
 										HANDLE_SHOW_IP_COMMAND2,
@@ -264,6 +268,12 @@ type HANDLE_KEYBOARD_ST is (	STARTUP_DELAY,
 										HANDLE_SHOW_IP_COMMAND7,
 										HANDLE_SHOW_IP_COMMAND8,
 										HANDLE_SHOW_IP_COMMAND9,
+										HANDLE_SHOW_IP_SETTING_COMMAND0,
+										HANDLE_SHOW_IP_SETTING_COMMAND1,
+										HANDLE_SHOW_IP_SETTING_COMMAND2,
+										HANDLE_SHOW_IP_SETTING_COMMAND3,
+										HANDLE_SHOW_IP_SETTING_COMMAND4,
+										HANDLE_SHOW_IP_SETTING_COMMAND5,
 										HANDLE_CONNECT_LOCAL0,
 										HANDLE_CONNECT_LOCAL1,
 										HANDLE_CONNECT_LOCAL2,
@@ -277,10 +287,8 @@ type HANDLE_KEYBOARD_ST is (	STARTUP_DELAY,
 										CONNECT_DHCP_COMMAND6,
 										CONNECT_DHCP_COMMAND7,
 										CANCEL_DHCP_CONNECT0,
-										
 										CONNECT_STATIC_COMMAND0,
 										CONNECT_STATIC_COMMAND1,
-										
 										PRINT_COMMAND_RESULT0,
 										PRINT_COMMAND_RESULT1);
 										
@@ -421,10 +429,31 @@ begin
 				elsif command_hash = unsigned(C_connect_local_command) then
 					hk_next_state <= HANDLE_CONNECT_LOCAL0;
 				elsif command_hash = unsigned(C_show_ip_command) then
-					hk_next_state <= HANDLE_SHOW_IP_COMMAND0;
+					hk_next_state <= HANDLE_SHOW_MY_IP_COMMAND;
+				elsif command_hash = unsigned(C_show_ip_setting_command) then
+					hk_next_state <= HANDLE_SHOW_IP_SETTING_COMMAND0;
+				elsif command_hash = unsigned(C_show_cloud_ip_command) then
+					hk_next_state <= HANDLE_SHOW_CLOUD_IP_COMMAND;
 				else
 					hk_next_state <= REPORT_UNKNOWN_COMMAND1;
 				end if;
+			
+			when HANDLE_SHOW_IP_SETTING_COMMAND0 =>
+				hk_next_state <= PRINT_COMMAND_RESULT0; -- cache HANDLE_SHOW_IP_SETTING_COMMAND1
+			when HANDLE_SHOW_IP_SETTING_COMMAND1 =>
+				hk_next_state <= HANDLE_SHOW_IP_SETTING_COMMAND2;
+			when HANDLE_SHOW_IP_SETTING_COMMAND2 =>
+				hk_next_state <= HANDLE_SHOW_IP_SETTING_COMMAND3;
+			when HANDLE_SHOW_IP_SETTING_COMMAND3 =>
+				if DATA_IN(0) = '1' then
+					hk_next_state <= HANDLE_SHOW_IP_SETTING_COMMAND4;
+				else
+					hk_next_state <= HANDLE_SHOW_IP_SETTING_COMMAND5;
+				end if;
+			when HANDLE_SHOW_IP_SETTING_COMMAND4 =>
+				hk_next_state <= PRINT_COMMAND_RESULT0; -- cache NEW_LINE_W_NEW_PROMPT0
+			when HANDLE_SHOW_IP_SETTING_COMMAND5 =>
+				hk_next_state <= PRINT_COMMAND_RESULT0; -- cache NEW_LINE_W_NEW_PROMPT0
 			
 			when HANDLE_CONNECT_LOCAL0 =>
 				hk_next_state <= HANDLE_CONNECT_LOCAL1;
@@ -472,7 +501,12 @@ begin
 				hk_next_state <= CONNECT_STATIC_COMMAND1;
 			when CONNECT_STATIC_COMMAND1 =>
 				hk_next_state <= PRINT_COMMAND_RESULT0; -- cache CONNECT_DHCP_COMMAND2
-				
+			
+			when HANDLE_SHOW_CLOUD_IP_COMMAND =>
+				hk_next_state <= HANDLE_SHOW_IP_COMMAND0;
+			when HANDLE_SHOW_MY_IP_COMMAND =>
+				hk_next_state <= HANDLE_SHOW_IP_COMMAND0;
+			
 			when HANDLE_SHOW_IP_COMMAND0 =>
 				hk_next_state <= PRINT_COMMAND_RESULT0; -- cache HANDLE_SHOW_IP_COMMAND1
 			when HANDLE_SHOW_IP_COMMAND1 =>
@@ -492,7 +526,7 @@ begin
 			when HANDLE_SHOW_IP_COMMAND7 =>
 				hk_next_state <= HANDLE_SHOW_IP_COMMAND8;
 			when HANDLE_SHOW_IP_COMMAND8 =>
-				if addr = X"0C" then
+				if addr = X"0C" or addr = X"10" then
 					hk_next_state <= NEW_LINE_W_NEW_PROMPT0;
 				else
 					hk_next_state <= HANDLE_SHOW_IP_COMMAND9;
@@ -943,8 +977,16 @@ begin
 				screen_msg_addr <= unsigned(C_success_message_addr);
 			elsif hk_state = CONNECT_DHCP_COMMAND7 then
 				screen_msg_addr <= unsigned(C_failed_message_addr);
-			elsif hk_state = HANDLE_SHOW_IP_COMMAND0 then
+			elsif hk_state = HANDLE_SHOW_MY_IP_COMMAND then
 				screen_msg_addr <= unsigned(C_show_ip_addr);
+			elsif hk_state = HANDLE_SHOW_CLOUD_IP_COMMAND then
+				screen_msg_addr <= unsigned(C_show_cloud_ip_addr);
+			elsif hk_state = HANDLE_SHOW_IP_SETTING_COMMAND0 then
+				screen_msg_addr <= unsigned(C_show_ip_setting_addr);
+			elsif hk_state = HANDLE_SHOW_IP_SETTING_COMMAND4 then
+				screen_msg_addr <= unsigned(C_dynamic_addr);
+			elsif hk_state = HANDLE_SHOW_IP_SETTING_COMMAND5 then
+				screen_msg_addr <= unsigned(C_static_addr);
 			else
 				screen_msg_addr <= screen_msg_addr + 1;
 			end if;
@@ -968,6 +1010,12 @@ begin
 				hk_cached_state <= NEW_LINE_W_NEW_PROMPT0;
 			elsif hk_state = HANDLE_SHOW_IP_COMMAND0 then
 				hk_cached_state <= HANDLE_SHOW_IP_COMMAND1;
+			elsif hk_state = HANDLE_SHOW_IP_SETTING_COMMAND0 then
+				hk_cached_state <= HANDLE_SHOW_IP_SETTING_COMMAND1;
+			elsif hk_state = HANDLE_SHOW_IP_SETTING_COMMAND4 then
+				hk_cached_state <= NEW_LINE_W_NEW_PROMPT0;
+			elsif hk_state = HANDLE_SHOW_IP_SETTING_COMMAND5 then
+				hk_cached_state <= NEW_LINE_W_NEW_PROMPT0;
 			end if;
 		end if;
 	end process;
@@ -1086,10 +1134,12 @@ begin
 				addr <= addr + 1;
 			elsif hk_state = HANDLE_CONNECT_LOCAL0 then
 				addr <= X"07";
+			elsif hk_state = HANDLE_SHOW_IP_SETTING_COMMAND1 then
+				addr <= X"07";
 			elsif hk_state = CONNECT_DHCP_COMMAND3 then
 				addr <= X"08";
 			elsif hk_state = HANDLE_SHOW_IP_COMMAND1 then
-				addr <= X"09";
+				addr <= unsigned(show_ip_start_addr);
 			elsif hk_state = HANDLE_SHOW_IP_COMMAND8 then
 				addr <= addr + 1;
 			end if;
@@ -1098,6 +1148,11 @@ begin
 			end if;
 			if hk_state = HANDLE_CONNECT_LOCAL2 then
 				dhcp_enabled <= DATA_IN(0);
+			end if;
+			if hk_state = HANDLE_SHOW_MY_IP_COMMAND then
+				show_ip_start_addr <= X"09";
+			elsif hk_state = HANDLE_SHOW_CLOUD_IP_COMMAND then
+				show_ip_start_addr <= X"0D";
 			end if;
 		end if;
 	end process;

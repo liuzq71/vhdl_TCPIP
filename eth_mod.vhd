@@ -214,6 +214,8 @@ signal dhcp_addr_locked, static_addr_locked 	: std_logic := '0';
 signal server_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100";
 signal server_mac_addr : std_logic_vector(47 downto 0) := X"000000000000";
 
+signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"DCEFF2CC"; -- 220.239.242.204
+
 signal tx_packet_frame_addr :unsigned(11 downto 0);
 signal tx_packet_length, tx_packet_length_counter, tx_packet_end_pointer :unsigned(15 downto 0);
 signal doing_tx_packet_config, tx_packet_frame_data_rd : std_logic := '0';
@@ -2608,6 +2610,14 @@ begin
 				DATA_OUT <= ip_addr(15 downto 8);
 			elsif ADDR_IN = X"0C" then
 				DATA_OUT <= ip_addr(7 downto 0);
+			elsif ADDR_IN = X"0D" then
+				DATA_OUT <= cloud_ip_addr(31 downto 24);
+			elsif ADDR_IN = X"0E" then
+				DATA_OUT <= cloud_ip_addr(23 downto 16);
+			elsif ADDR_IN = X"0F" then
+				DATA_OUT <= cloud_ip_addr(15 downto 8);
+			elsif ADDR_IN = X"10" then
+				DATA_OUT <= cloud_ip_addr(7 downto 0);
 			end if;
 		end if;
 	end process;
