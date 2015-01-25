@@ -46,10 +46,11 @@ entity user_input_handler is
 			  ETH_COMMAND_CMPLT_IN	: in STD_LOGIC;
 			  ETH_COMMAND_ERR_IN		: in STD_LOGIC_VECTOR(7 downto 0);
 			  
-			  CLK_1HZ_IN	: in STD_LOGIC;
+			  CLK_1HZ_IN	: in STD_LOGIC
 			  
-			  DEBUG_OUT				: out STD_LOGIC_VECTOR(7 downto 0);
-			  DEBUG_OUT2			: out STD_LOGIC_VECTOR(7 downto 0));
+--			  DEBUG_OUT				: out STD_LOGIC_VECTOR(7 downto 0);
+--			  DEBUG_OUT2			: out STD_LOGIC_VECTOR(7 downto 0)
+			  );			  
 end user_input_handler;
 
 architecture Behavioral of user_input_handler is
@@ -81,6 +82,7 @@ architecture Behavioral of user_input_handler is
 		Generic (G_DATA_A_SIZE 	:natural :=32;
 					G_ADDR_A_SIZE	:natural :=9;
 					G_RELATION		:natural :=3;
+					G_INIT_ZERO		:boolean := true;
 					G_INIT_FILE		:string :="");--log2(SIZE_A/SIZE_B)
 		Port ( CLK_A_IN 	: in  STD_LOGIC;
 				 WE_A_IN 	: in  STD_LOGIC;
@@ -146,6 +148,7 @@ constant C_show_tcp_port_command 			: std_logic_vector(15 downto 0) 	:= X"46C3";
 constant C_show_ping_enabled_command 		: std_logic_vector(15 downto 0) 	:= X"95B0";
 constant C_set_network_init_command 		: std_logic_vector(15 downto 0) 	:= X"1853";
 constant C_connect_local_command 			: std_logic_vector(15 downto 0) 	:= X"00FE";
+constant C_connect_cloud_command 			: std_logic_vector(15 downto 0) 	:= X"004C";
 
 signal C_net_enabled_message_addr 	: std_logic_vector(8 downto 0) := '0'&X"00";
 signal C_mac_message_addr 				: std_logic_vector(8 downto 0) := '0'&X"16";
@@ -153,6 +156,7 @@ signal C_show_ip_setting_addr			: std_logic_vector(8 downto 0) := '0'&X"25";
 signal C_show_ip_addr 					: std_logic_vector(8 downto 0) := '0'&X"33";
 signal C_show_cloud_ip_addr			: std_logic_vector(8 downto 0) := '0'&X"41";
 signal C_local_connect_addr			: std_logic_vector(8 downto 0) := '0'&X"8B";
+signal C_cloud_connect_addr			: std_logic_vector(8 downto 0) := '0'&X"9C";
 signal C_unknown_messge_addr 			: std_logic_vector(8 downto 0) := '1'&X"00";
 signal C_true_message_addr 			: std_logic_vector(8 downto 0) := '1'&X"14";
 signal C_false_message_addr 			: std_logic_vector(8 downto 0) := '1'&X"19";
@@ -166,8 +170,8 @@ signal C_end_of_message_char : std_logic_vector(7 downto 0) := X"FF";
 type SLV_BYTE_ARRAY16 is array (0 to 15) of std_logic_vector(7 downto 0);
 constant prompt_array_inst : SLV_BYTE_ARRAY16 := ( X"20", X"76", X"61", X"75", X"6C", X"74", X"7E", X"24",
 																	 X"20", X"20", X"20", X"20", X"20", X"20", X"20", X"20");
-constant C_prompt_array_length : std_logic_vector(4 downto 0) := "01001";
-signal prompt_ram_index : unsigned(4 downto 0) := (others => '0');
+constant C_prompt_array_length : std_logic_vector(3 downto 0) := "1001";
+signal prompt_ram_index : unsigned(3 downto 0) := (others => '0');
 
 signal startup_count : unsigned(27 downto 0) := X"17D7840"; -- 1 sec @ 25 MHz
 
@@ -210,7 +214,7 @@ signal bin_val : std_logic_vector(7 downto 0) := (others => '0');
 signal bcd_val : std_logic_vector(11 downto 0) := (others => '0');
 
 signal clk_1hz : std_logic := '0';
-signal dhcp_second_count : unsigned(3 downto 0);
+signal dhcp_second_count, tcp_second_count : unsigned(3 downto 0);
 
 type HANDLE_KEYBOARD_ST is (	STARTUP_DELAY,
 										PRINT_COMMAND_PROMPT0,
@@ -278,6 +282,12 @@ type HANDLE_KEYBOARD_ST is (	STARTUP_DELAY,
 										HANDLE_CONNECT_LOCAL1,
 										HANDLE_CONNECT_LOCAL2,
 										HANDLE_CONNECT_LOCAL3,
+										HANDLE_CONNECT_CLOUD_COMMAND0,
+										HANDLE_CONNECT_CLOUD_COMMAND1,
+										HANDLE_CONNECT_CLOUD_COMMAND2,
+										HANDLE_CONNECT_CLOUD_COMMAND3,
+										HANDLE_CONNECT_CLOUD_COMMAND4,
+										HANDLE_CONNECT_CLOUD_COMMAND5,
 										CONNECT_DHCP_COMMAND0,
 										CONNECT_DHCP_COMMAND1,
 										CONNECT_DHCP_COMMAND2,
@@ -309,8 +319,8 @@ begin
 
 	clk_1hz <= CLK_1HZ_IN;
 
-	DEBUG_OUT <= slv(command_hash(15 downto 8));
-	DEBUG_OUT2 <= slv(command_hash(7 downto 0));
+--	DEBUG_OUT <= slv(command_hash(15 downto 8));
+--	DEBUG_OUT2 <= slv(command_hash(7 downto 0));
 
 	---- CONVERT UART DATA TO KEYBOARD DATA ----
 
@@ -342,7 +352,9 @@ begin
    end process;
 	
 	HK_NEXT_STATE_DECODE: process (hk_state, startup_count, handle_backspace, keyboard_rd, prompt_ram_index, keyboard_data,
-												command_ram_index)
+												command_ram_index, command_ram_index_max, command_hash, DATA_IN, dhcp_enabled, clk_1hz, dhcp_second_count, 
+													tcp_second_count, bcd_conv_done, addr, hex_conv_done, networking_enabled, screen_msg_char, C_end_of_message_char, 
+														hk_cached_state)
    begin
       hk_next_state <= hk_state;  --default is to stay in current state
       case (hk_state) is
@@ -434,6 +446,8 @@ begin
 					hk_next_state <= HANDLE_SHOW_IP_SETTING_COMMAND0;
 				elsif command_hash = unsigned(C_show_cloud_ip_command) then
 					hk_next_state <= HANDLE_SHOW_CLOUD_IP_COMMAND;
+				elsif command_hash = unsigned(C_connect_cloud_command) then
+					hk_next_state <= HANDLE_CONNECT_CLOUD_COMMAND0;
 				else
 					hk_next_state <= REPORT_UNKNOWN_COMMAND1;
 				end if;
@@ -489,18 +503,39 @@ begin
 				else
 					hk_next_state <= CONNECT_DHCP_COMMAND2;
 				end if;
-			when CONNECT_DHCP_COMMAND6 =>
+			when CONNECT_DHCP_COMMAND6 => -- RENAME TO "PRINT SUCCESS"
 				hk_next_state <= PRINT_COMMAND_RESULT0; -- cache NEW_LINE_W_NEW_PROMPT0
-			when CONNECT_DHCP_COMMAND7 =>
+			when CONNECT_DHCP_COMMAND7 => -- RENAME TO "PRINT FAILED"
 				hk_next_state <= PRINT_COMMAND_RESULT0; -- cache NEW_LINE_W_NEW_PROMPT0
 			
 			when CANCEL_DHCP_CONNECT0 =>
 				hk_next_state <= CONNECT_DHCP_COMMAND7;
 			
 			when CONNECT_STATIC_COMMAND0 =>
-				hk_next_state <= CONNECT_STATIC_COMMAND1;
+				hk_next_state <= CONNECT_STATIC_COMMAND1; -- TODO REMOVE REDUNDANT STATE?
 			when CONNECT_STATIC_COMMAND1 =>
 				hk_next_state <= PRINT_COMMAND_RESULT0; -- cache CONNECT_DHCP_COMMAND2
+			
+			when HANDLE_CONNECT_CLOUD_COMMAND0 =>
+				hk_next_state <= PRINT_COMMAND_RESULT0; -- cache HANDLE_CONNECT_CLOUD_COMMAND1;
+			when HANDLE_CONNECT_CLOUD_COMMAND1 =>
+				if clk_1hz = '1' then
+					hk_next_state <= HANDLE_CONNECT_CLOUD_COMMAND2;
+				end if;
+			when HANDLE_CONNECT_CLOUD_COMMAND2 =>
+				hk_next_state <= HANDLE_CONNECT_CLOUD_COMMAND3;
+			when HANDLE_CONNECT_CLOUD_COMMAND3 =>
+				hk_next_state <= HANDLE_CONNECT_CLOUD_COMMAND4;
+			when HANDLE_CONNECT_CLOUD_COMMAND4 =>
+				if DATA_IN(0) = '1' then
+					hk_next_state <= CONNECT_DHCP_COMMAND6;
+				elsif tcp_second_count > X"9" then
+					hk_next_state <= HANDLE_CONNECT_CLOUD_COMMAND5;
+				else
+					hk_next_state <= HANDLE_CONNECT_CLOUD_COMMAND1;
+				end if;
+			when HANDLE_CONNECT_CLOUD_COMMAND5 =>
+				hk_next_state <= CONNECT_DHCP_COMMAND7;
 			
 			when HANDLE_SHOW_CLOUD_IP_COMMAND =>
 				hk_next_state <= HANDLE_SHOW_IP_COMMAND0;
@@ -622,7 +657,7 @@ begin
    begin
       if rising_edge(CLK_IN) then
 			if hk_state = PRINT_COMMAND_PROMPT0 then
-				prompt_ram_index <= "00000";
+				prompt_ram_index <= X"0";
 			elsif hk_state = PRINT_COMMAND_PROMPT1 then
 				prompt_ram_index <= prompt_ram_index + 1;
 			end if;
@@ -668,6 +703,8 @@ begin
 				screen_wr_buf_byte <= X"3"&bcd_val(3 downto 0);
 			elsif hk_state = HANDLE_SHOW_IP_COMMAND9 then
 				screen_wr_buf_byte <= X"2E";
+			elsif hk_state = HANDLE_CONNECT_CLOUD_COMMAND2 then
+				screen_wr_buf_byte <= X"2E";
 			end if;
 			if hk_prev_state = PRINT_COMMAND_PROMPT1 then
 				screen_wr_buffer_index <= screen_wr_buffer_index + 1;
@@ -705,6 +742,8 @@ begin
 				screen_wr_buffer_index <= screen_wr_buffer_index + 1;
 			elsif hk_prev_state = HANDLE_SHOW_IP_COMMAND9 then
 				screen_wr_buffer_index <= screen_wr_buffer_index + 1;
+			elsif hk_prev_state = HANDLE_CONNECT_CLOUD_COMMAND2 then
+				screen_wr_buffer_index <= screen_wr_buffer_index + 1;
 			end if;
 			if hk_state = PRINT_COMMAND_PROMPT1 then
 				screen_buf_we <= '1';
@@ -741,6 +780,8 @@ begin
 			elsif hk_state = HANDLE_SHOW_IP_COMMAND7 then
 				screen_buf_we <= '1';
 			elsif hk_state = HANDLE_SHOW_IP_COMMAND9 then
+				screen_buf_we <= '1';
+			elsif hk_state = HANDLE_CONNECT_CLOUD_COMMAND2 then
 				screen_buf_we <= '1';
 			else
 				screen_buf_we <= '0';
@@ -789,6 +830,7 @@ begin
 	Generic Map ( G_DATA_A_SIZE 	=> screen_wr_buf_byte'length,
 					  G_ADDR_A_SIZE	=> screen_wr_buffer_index'length,
 					  G_RELATION		=> 0, --log2(SIZE_A/SIZE_B)
+					  G_INIT_ZERO		=> false,
 					  G_INIT_FILE		=> "./coe_dir/ascii_space.coe")
    Port Map ( CLK_A_IN 		=> CLK_IN,
 				  WE_A_IN 		=> screen_buf_we,
@@ -810,7 +852,7 @@ begin
       end if;
    end process;
 
-   SB_NEXT_STATE_DECODE: process (sb_state, screen_rd_buffer_index, screen_wr_buffer_index, screen_rd_buf_byte)
+   SB_NEXT_STATE_DECODE: process (sb_state, screen_rd_buffer_index, screen_wr_buffer_index, screen_rd_buf_byte, char_buf_wr_addr)
    begin
       sb_next_state <= sb_state;  --default is to stay in current state
       case (sb_state) is
@@ -891,6 +933,7 @@ begin
 	Generic Map ( G_DATA_A_SIZE 	=> TEXT_DATA_OUT'length,
 					  G_ADDR_A_SIZE	=> TEXT_ADDR_IN'length,
 					  G_RELATION		=> 0, --log2(SIZE_A/SIZE_B)
+					  G_INIT_ZERO		=> false,
 					  G_INIT_FILE		=> "./coe_dir/ascii_space.coe")
    Port Map ( CLK_A_IN 		=> CLK_IN,
 				  WE_A_IN 		=> '0',
@@ -987,6 +1030,8 @@ begin
 				screen_msg_addr <= unsigned(C_dynamic_addr);
 			elsif hk_state = HANDLE_SHOW_IP_SETTING_COMMAND5 then
 				screen_msg_addr <= unsigned(C_static_addr);
+			elsif hk_state = HANDLE_CONNECT_CLOUD_COMMAND0 then
+				screen_msg_addr <= unsigned(C_cloud_connect_addr);
 			else
 				screen_msg_addr <= screen_msg_addr + 1;
 			end if;
@@ -1016,6 +1061,8 @@ begin
 				hk_cached_state <= NEW_LINE_W_NEW_PROMPT0;
 			elsif hk_state = HANDLE_SHOW_IP_SETTING_COMMAND5 then
 				hk_cached_state <= NEW_LINE_W_NEW_PROMPT0;
+			elsif hk_state = HANDLE_CONNECT_CLOUD_COMMAND0 then
+				hk_cached_state <= HANDLE_CONNECT_CLOUD_COMMAND1;
 			end if;
 		end if;
 	end process;
@@ -1024,6 +1071,7 @@ begin
 	Generic Map ( G_DATA_A_SIZE 	=> screen_msg_char'length,
 					  G_ADDR_A_SIZE	=> screen_msg_addr'length,
 					  G_RELATION		=> 0, --log2(SIZE_A/SIZE_B)
+					  G_INIT_ZERO		=> false,
 					  G_INIT_FILE		=> "./coe_dir/screen_msg.coe")
    Port Map ( CLK_A_IN 		=> CLK_IN,
 				  WE_A_IN 		=> '0',
@@ -1098,8 +1146,12 @@ begin
 				eth_command <= X"4";
 			elsif hk_state = CONNECT_STATIC_COMMAND0 then
 				eth_command <= X"5";
+			elsif hk_state = HANDLE_CONNECT_CLOUD_COMMAND0 then
+				eth_command <= X"6";
 			elsif hk_state = CANCEL_DHCP_CONNECT0 then
 				eth_command <= X"7";
+			elsif hk_state = HANDLE_CONNECT_CLOUD_COMMAND5 then
+				eth_command <= X"9";
 			end if;
 			if hk_state = HANDLE_NETWORK_INIT_COMMAND0 then
 				eth_command_en <= '1';
@@ -1107,16 +1159,24 @@ begin
 				eth_command_en <= '1';
 			elsif hk_state = CONNECT_STATIC_COMMAND0 then
 				eth_command_en <= '1';
+			elsif hk_state = HANDLE_CONNECT_CLOUD_COMMAND0 then
+				eth_command_en <= '1';
 			elsif hk_state = CANCEL_DHCP_CONNECT0 then
+				eth_command_en <= '1';
+			elsif hk_state = HANDLE_CONNECT_CLOUD_COMMAND5 then
 				eth_command_en <= '1';
 			else
 				eth_command_en <= '0';
 			end if;
-			
 			if hk_state = CONNECT_DHCP_COMMAND0 or hk_state = CONNECT_STATIC_COMMAND0 then
 				dhcp_second_count <= X"0";
 			elsif hk_state = CONNECT_DHCP_COMMAND3 then
 				dhcp_second_count <= dhcp_second_count + 1;
+			end if;
+			if hk_state = HANDLE_CONNECT_CLOUD_COMMAND0 then
+				tcp_second_count <= X"0";
+			elsif hk_state = HANDLE_CONNECT_CLOUD_COMMAND3 then
+				tcp_second_count <= tcp_second_count + 1;
 			end if;
 		end if;
 	end process;
@@ -1142,6 +1202,8 @@ begin
 				addr <= unsigned(show_ip_start_addr);
 			elsif hk_state = HANDLE_SHOW_IP_COMMAND8 then
 				addr <= addr + 1;
+			elsif hk_state = HANDLE_CONNECT_CLOUD_COMMAND2 then
+				addr <= X"11";
 			end if;
 			if hk_state = HANDLE_NETWORK_ENABLED_COMMAND2 then
 				networking_enabled <= DATA_IN(0);

@@ -9,7 +9,7 @@
 
 ## Clock pin for Nexys 2 Board
 NET "CLK_IN" LOC = "B8";    # Bank = 0, Pin name = IP_L13P_0/GCLK8, Type = GCLK,                 Sch name = GCLK0
-TIMESPEC ts_clk = PERIOD "CLK_IN" 20 ns HIGH 50 %;
+TIMESPEC TS_CLK_IN = PERIOD "CLK_IN" 20 ns HIGH 50 %;
 
 #NET "clk1"        LOC = "U9";    # Bank = 2, Pin name = IO_L13P_2/D4/GCLK14, Type = DUAL/GCLK,        Sch name = GCLK1
 

@@ -105,10 +105,11 @@ architecture Behavioral of vault is
 				  ETH_COMMAND_CMPLT_IN	: in STD_LOGIC;
 				  ETH_COMMAND_ERR_IN		: in STD_LOGIC_VECTOR(7 downto 0);
 				  
-				  CLK_1HZ_IN	: in STD_LOGIC;
+				  CLK_1HZ_IN	: in STD_LOGIC
 				  
-				  DEBUG_OUT		: out STD_LOGIC_VECTOR(7 downto 0);
-				  DEBUG_OUT2	: out STD_LOGIC_VECTOR(7 downto 0));
+--				  DEBUG_OUT		: out STD_LOGIC_VECTOR(7 downto 0);
+--				  DEBUG_OUT2	: out STD_LOGIC_VECTOR(7 downto 0)
+				  );
 	END COMPONENT;
 
 	COMPONENT led_mod is
@@ -134,8 +135,8 @@ architecture Behavioral of vault is
 			  ADDR_IN	: in  STD_LOGIC_VECTOR (7 downto 0);
 			  DATA_OUT	: out  STD_LOGIC_VECTOR (7 downto 0);
 			  
-			  DEBUG_IN 	: in STD_LOGIC;
-			  DEBUG_OUT	: out  STD_LOGIC_VECTOR (15 downto 0);
+--			  DEBUG_IN 	: in STD_LOGIC;
+--			  DEBUG_OUT	: out  STD_LOGIC_VECTOR (15 downto 0);
 			  
            -- TCP Connection Interface
 			  TCP_RD_DATA_AVAIL_OUT : out STD_LOGIC;
@@ -233,7 +234,7 @@ begin
 	led_mod_inst : led_mod
     Port Map ( CLK_IN 				=> clk_25MHz,
 					LED_STATE_IN 		=> "001",
-					ERROR_CODE_IN		=> "11001",
+					ERROR_CODE_IN		=> SW_IN(4 downto 0),
 					ERROR_CODE_EN_IN	=> '0',
 					LEDS_OUT 			=> LED_OUT(1 downto 0),
 					
@@ -284,10 +285,11 @@ begin
 				ETH_COMMAND_CMPLT_IN	=> eth_command_cmplt,
 				ETH_COMMAND_ERR_IN	=> eth_command_err,
 				
-				CLK_1HZ_IN	=> clk_1hz,
+				CLK_1HZ_IN	=> clk_1hz
 				
-				DEBUG_OUT			=> open,
-				DEBUG_OUT2			=> open);
+--				DEBUG_OUT			=> open,
+--				DEBUG_OUT2			=> open
+				);
 				
 ------------------------- Ethernet I/O --------------------------------
 
@@ -309,8 +311,8 @@ begin
 					  ADDR_IN 	=> addr_bus,
 					  DATA_OUT 	=> data_bus,
 					  
-					  DEBUG_IN	=> buttons(1),
-					  DEBUG_OUT	=> open,
+--					  DEBUG_IN	=> buttons(1),
+--					  DEBUG_OUT	=> open,
 					  
 					  -- TCP Connection Interface
 					  TCP_RD_DATA_AVAIL_OUT => LED_OUT(2),

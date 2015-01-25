@@ -31,6 +31,7 @@ entity TDP_RAM is
 	Generic (G_DATA_A_SIZE 	:natural :=32;
 				G_ADDR_A_SIZE	:natural :=9;
 				G_RELATION		:natural :=3;
+				G_INIT_ZERO		:boolean := true;
 				G_INIT_FILE		:string :="");--log2(SIZE_A/SIZE_B)
    Port ( CLK_A_IN 	: in  STD_LOGIC;
           WE_A_IN 	: in  STD_LOGIC;
@@ -54,13 +55,13 @@ subtype slv   is std_logic_vector;
 
 type RAM_TYPE is array(2**(G_ADDR_A_SIZE+G_RELATION)-1 downto 0) of std_logic_vector(G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0);
 
-impure function InitRamFromFile (RamFileName : in string) return RAM_TYPE is
+impure function InitRamFromFile (InitZero : in boolean; RamFileName : in string) return RAM_TYPE is
 	FILE RamFile : text;
 	variable RamFileLine : line;
 	variable RAM : RAM_TYPE;
 	variable tmp : bit_vector(G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0);
 begin
-	if RamFileName = "" then
+	if InitZero = true then
 		for I in 0 to (2**(G_ADDR_A_SIZE+G_RELATION))-1 loop
 			RAM(I) := (others => '0');
 		end loop;
@@ -76,7 +77,7 @@ begin
 	end if;
 end InitRamFromFile;
 
-shared variable memory : RAM_TYPE  := InitRamFromFile(G_INIT_FILE);
+shared variable memory : RAM_TYPE  := InitRamFromFile(G_INIT_ZERO, G_INIT_FILE);
 
 begin
 

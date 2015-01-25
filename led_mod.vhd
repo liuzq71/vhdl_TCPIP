@@ -47,14 +47,14 @@ constant C_heartbeat_second	: std_logic_vector(27 downto 0) := X"05F5E10";
 constant C_heartbeat_third		: std_logic_vector(27 downto 0) := X"04C4B40";
 
 -- State info
-constant C_off_state 			: std_logic_vector(2 downto 0) := slv(to_unsigned(0, 3));
-constant C_heardbeat_state 	: std_logic_vector(2 downto 0) := slv(to_unsigned(1, 3));
-constant C_initializing_state : std_logic_vector(2 downto 0) := slv(to_unsigned(2, 3));
-constant C_init_cmplt_state 	: std_logic_vector(2 downto 0) := slv(to_unsigned(3, 3));
+constant C_off_state 			: std_logic_vector(2 downto 0) := "000";
+constant C_heardbeat_state 	: std_logic_vector(2 downto 0) := "001";
+constant C_initializing_state : std_logic_vector(2 downto 0) := "010";
+constant C_init_cmplt_state 	: std_logic_vector(2 downto 0) := "011";
 
-constant C_error_state 			: std_logic_vector(2 downto 0) := slv(to_unsigned(7, 3));
+constant C_error_state 			: std_logic_vector(2 downto 0) := "111";
 
-signal led_state 					: std_logic_vector(2 downto 0) := slv(to_unsigned(0, 3));
+signal led_state 					: std_logic_vector(2 downto 0) := "000";
 signal leds 						: std_logic_vector(1 downto 0) := "00";
 
 signal clk_div_1sec_counter 					: unsigned(27 downto 0) := (others => '0');
