@@ -71,7 +71,7 @@ signal rd_bit_counter : unsigned(7 downto 0);
 
 signal we_ini, we_ini_p, rd_ini, rd_ini_p, doing_wr, doing_rd : std_logic := '0';
 signal operation_cmplt : std_logic := '0';
-signal operation_cmplt_reg : std_logic_vector(7 downto 0);
+signal operation_cmplt_reg : std_logic_vector(9 downto 0);
 signal wr_data_buf, wr_data_buf2 : std_logic_vector(7 downto 0);
 signal rd_addr_buf, rd_data_buf : std_logic_vector(7 downto 0) := (others => '0');
 signal doing_wr_p, doing_rd_p, load_countinous_wr : std_logic := '0';
@@ -204,7 +204,7 @@ begin
 	begin
 		if rising_edge(CLK_IN) then
 			operation_cmplt_reg(0) <= operation_cmplt;
-			operation_cmplt_reg(7 downto 1) <= operation_cmplt_reg(6 downto 0);
+			operation_cmplt_reg(9 downto 1) <= operation_cmplt_reg(8 downto 0);
 			if doing_wr = '1' and clk_div = '1' and spi_clk_o = '1' and wr_bit_counter = X"0" and WR_CONTINUOUS_IN = '0' then
 				operation_cmplt <= '1';
 			elsif doing_rd = '1' and clk_div = '1' and spi_clk_o = '1' and rd_bit_counter = X"0" then
@@ -223,7 +223,7 @@ begin
 				cs <= '0';
 			elsif operation_cmplt = '1' and SLOW_CS_EN_IN = '0' then
 				cs <= '1';
-			elsif operation_cmplt_reg(4) = '1' and SLOW_CS_EN_IN = '1' then
+			elsif operation_cmplt_reg(9) = '1' and SLOW_CS_EN_IN = '1' then
 				cs <= '1';
 			end if;
 		end if;

@@ -29,17 +29,23 @@ use UNISIM.VComponents.all;
 
 entity clk_mod is
     Port ( CLK_50MHz_IN 	: in  STD_LOGIC;
-           CLK_25Mhz_OUT 	: out STD_LOGIC);
+           CLK_25Mhz_OUT 	: out STD_LOGIC;
+			  CLK_50Mhz_OUT	: out STD_LOGIC);
 end clk_mod;
 
 architecture Behavioral of clk_mod is
 
 signal clk_1x, clk_1x_bufg :std_logic:='0';
 signal clk0_2xout_tmp, clk0_2xout_bufg, clk0_div2out, clk0_div2out_bufg :std_logic:='0';
+signal clk0_1xout_tmp, clk0_1xout_bufg :std_logic:='0';
 
 begin
 
+	CLK_50Mhz_OUT <= clk0_1xout_bufg;
 	CLK_25Mhz_OUT <= clk0_div2out_bufg;
+
+ 	U01_BUFG : BUFG
+    port map (I => clk0_1xout_tmp, O => clk0_1xout_bufg);
 	
  	U0_BUFG : BUFG
     port map (I => clk0_2xout_tmp, O => clk0_2xout_bufg);
@@ -74,7 +80,7 @@ begin
       PSDONE 	=> open,     			-- 1-bit output: Phase shift done output
       STATUS 	=> open,     			-- 8-bit output: DCM_SP status output
       CLKFB 	=> clk0_2xout_bufg,  -- 1-bit input: Cl DONE until DCM_SP LOCKED (TRUE/FALSE)
-      CLK0 		=> open,        		-- 1-bit output: 0 degree clock output
+      CLK0 		=> clk0_1xout_tmp,	-- 1-bit output: 0 degree clock output
       CLK180 	=> open,     			-- 1-bit output: 180 degree clock output
       CLK270 	=> open,     			-- 1-bit output: 270 degree clock output
       CLK2X 	=> clk0_2xout_tmp,   -- 1-bit output: 2X clock feedback input

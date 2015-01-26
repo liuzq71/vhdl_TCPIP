@@ -46,14 +46,22 @@ entity vault is
 				SCLK 			: out STD_LOGIC;
 				CS				: out STD_LOGIC;
 				INT			: in STD_LOGIC;
-				RESET			: out STD_LOGIC);
+				RESET			: out STD_LOGIC;
+				
+				SD_MISO		: out  STD_LOGIC;
+				SD_MOSI		: out  STD_LOGIC;
+				SD_CLK		: out  STD_LOGIC;
+				SD_CS			: out  STD_LOGIC
+				
+				);
 end vault;
 
 architecture Behavioral of vault is
 
 	COMPONENT clk_mod
 		 Port ( CLK_50MHz_IN 	: in  STD_LOGIC;
-				  CLK_25Mhz_OUT 	: out  STD_LOGIC);
+				  CLK_25Mhz_OUT 	: out  STD_LOGIC;
+				  CLK_50Mhz_OUT 	: out  STD_LOGIC);
 	END COMPONENT;
 	
 	COMPONENT sseg
@@ -136,7 +144,7 @@ architecture Behavioral of vault is
 			  DATA_OUT	: out  STD_LOGIC_VECTOR (7 downto 0);
 			  
 --			  DEBUG_IN 	: in STD_LOGIC;
---			  DEBUG_OUT	: out  STD_LOGIC_VECTOR (15 downto 0);
+			  DEBUG_OUT	: out  STD_LOGIC_VECTOR (15 downto 0);
 			  
            -- TCP Connection Interface
 			  TCP_RD_DATA_AVAIL_OUT : out STD_LOGIC;
@@ -153,7 +161,7 @@ architecture Behavioral of vault is
 
 subtype slv is std_logic_vector;
 
-signal clk_25MHz : std_logic;
+signal clk_25MHz, clk_50MHz : std_logic;
 
 signal clk_1hz : std_logic;
 
@@ -170,6 +178,7 @@ signal frame_data : std_logic_vector(15 downto 0) := (others => '0');
 signal frame_rd, frame_rd_cmplt : std_logic := '0';
 
 signal sseg_data : std_logic_vector(15 downto 0) := (others => '0');
+signal debug_o : std_logic_vector(15 downto 0) := (others => '0');
 signal debug_we : std_logic := '0';
 signal debug_wr_addr : unsigned(11 downto 0) := (others => '0');
 signal debug_wr_data : std_logic_vector(7 downto 0) := (others => '0');
@@ -185,11 +194,22 @@ begin
 	
 	clk_mod_Inst : clk_mod
 	PORT MAP ( 	CLK_50MHz_IN 	=> CLK_IN,
-					CLK_25Mhz_OUT 	=> clk_25MHz);
+					CLK_25Mhz_OUT 	=> clk_25MHz,
+					CLK_50Mhz_OUT => clk_50MHz);
 	
 --------------------------- DEBUG LOGIC ------------------------------
 	
 	LED_OUT(7 downto 3) <= (others => '0');
+	
+	SD_MISO 	<= debug_o(0);
+	SD_MOSI 	<= debug_o(1);
+	SD_CLK 	<= debug_o(2);
+	SD_CS 	<= debug_o(3);
+
+	SDO 	<= debug_o(0);
+	debug_o(1) <= SDI;
+	SCLK 	<= debug_o(2);
+	CS 	<= debug_o(3);
 	
 	sseg_inst : sseg
 	PORT MAP (	
@@ -293,8 +313,8 @@ begin
 				
 ------------------------- Ethernet I/O --------------------------------
 
-	sseg_data(15 downto 8) <= addr_bus;
-	sseg_data(7 downto 0) <= data_bus;
+--	sseg_data(15 downto 8) <= addr_bus;
+--	sseg_data(7 downto 0) <= data_bus;
 	RESET <= '0';
 
 	eth_mod_inst : eth_mod
@@ -312,18 +332,19 @@ begin
 					  DATA_OUT 	=> data_bus,
 					  
 --					  DEBUG_IN	=> buttons(1),
---					  DEBUG_OUT	=> open,
+--					  DEBUG_OUT	=> debug_o,
+					  DEBUG_OUT	=> sseg_data,
 					  
 					  -- TCP Connection Interface
 					  TCP_RD_DATA_AVAIL_OUT => LED_OUT(2),
-					  TCP_RD_DATA_EN_IN 		=> buttons(2),
+					  TCP_RD_DATA_EN_IN 		=> buttons(0),
 					  TCP_RD_DATA_OUT 		=> open,
 					  
 					  -- Eth SPI interface
-					  SDI_OUT 	=> SDO,
-					  SDO_IN 	=> SDI,
-					  SCLK_OUT 	=> SCLK,
-					  CS_OUT 	=> CS,
+					  SDI_OUT 	=> debug_o(0),
+					  SDO_IN 	=> debug_o(1),
+					  SCLK_OUT 	=> debug_o(2),
+					  CS_OUT 	=> debug_o(3),
 					  INT_IN 	=> INT);
 
 end Behavioral;

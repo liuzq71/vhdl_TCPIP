@@ -80,7 +80,7 @@ ARCHITECTURE behavior OF TB_spi_mod IS
    signal CS : std_logic;
 
    -- Clock period definitions
-   constant CLK_IN_period : time := 40 ns;
+   constant CLK_IN_period : time := 20 ns;
  
 BEGIN
  

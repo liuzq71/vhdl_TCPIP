@@ -220,12 +220,12 @@ NET "TX_OUT"       LOC = "U18";   # Bank = 1, Pin name = IO_L01P_1/A16, Type = D
 ##JC
 #NET "JC<0>"       LOC = "G15";   # Bank = 1, Pin name = IO_L18P_1, Type = I/O,                        Sch name = JC1
 #NET "JC<1>"       LOC = "J16";   # Bank = 1, Pin name = IO_L13N_1/A5/RHCLK5, Type = RHCLK/DUAL,       Sch name = JC2
-#NET "SD_CS"       LOC = "G13";   # Bank = 1, Pin name = IO_L20N_1, Type = I/O,                        Sch name = JC3
-#NET "SD_MOSI"     LOC = "H16";   # Bank = 1, Pin name = IO_L16P_1, Type = I/O,                        Sch name = JC4
-#NET "SD_CLK"      LOC = "H15";   # Bank = 1, Pin name = IO_L17N_1, Type = I/O,                        Sch name = JC7
+NET "SD_CS"       LOC = "G13";   # Bank = 1, Pin name = IO_L20N_1, Type = I/O,                        Sch name = JC3
+NET "SD_MOSI"     LOC = "H16";   # Bank = 1, Pin name = IO_L16P_1, Type = I/O,                        Sch name = JC4
+NET "SD_CLK"      LOC = "H15";   # Bank = 1, Pin name = IO_L17N_1, Type = I/O,                        Sch name = JC7
 #NET "JC<5>"       LOC = "F14";   # Bank = 1, Pin name = IO_L21N_1, Type = I/O,                        Sch name = JC8
 #NET "JC<6>"       LOC = "G16";   # Bank = 1, Pin name = IO_L18N_1, Type = I/O,                        Sch name = JC9
-#NET "SD_MISO"     LOC = "J12";   # Bank = 1, Pin name = IO_L15P_1/A2, Type = DUAL,                    Sch name = JC10
+NET "SD_MISO"     LOC = "J12";   # Bank = 1, Pin name = IO_L15P_1/A2, Type = DUAL,                    Sch name = JC10
 
 ##JD - NOTE: For other JD pins see LD(3:0) above under "Leds"
 #NET "JD<0>"       LOC = "J13";   # Bank = 1, Pin name = IO_L15N_1/A1, Type = DUAL,                    Sch name = JD1
