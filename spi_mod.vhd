@@ -36,6 +36,7 @@ entity spi_mod is
 				WR_DATA_IN 						: in  STD_LOGIC_VECTOR (7 downto 0);
 				WR_DATA_CMPLT_OUT				: out STD_LOGIC;
 
+				RD_CONTINUOUS_IN 				: in  STD_LOGIC;
 				RD_IN								: in	STD_LOGIC;
 				RD_WIDTH_IN 					: in  STD_LOGIC;
 				RD_ADDR_IN 						: in  STD_LOGIC_VECTOR (7 downto 0);
@@ -59,6 +60,7 @@ constant C_wr_len					: unsigned(3 downto 0) := X"F";
 constant C_rd_8len				: unsigned(7 downto 0) := X"0F"; -- 8 bit addr, 8 bit data
 constant C_rd_16len				: unsigned(7 downto 0) := X"17"; -- 8 bit addr, 16 bit data
 constant C_wr_cont_len			: unsigned(3 downto 0) := X"7";
+constant C_rd_cont_len			: unsigned(7 downto 0) := X"07";
 constant C_oper_cmplt_init		: unsigned(7 downto 0) := X"00";
 
 signal clk_counter : unsigned(7 downto 0) := C_clk_div;
@@ -222,7 +224,7 @@ begin
 			operation_cmplt_reg(15 downto 1) <= operation_cmplt_reg(14 downto 0);
 			if doing_wr = '1' and clk_div = '1' and spi_clk_o = '1' and wr_bit_counter = X"0" and WR_CONTINUOUS_IN = '0' then
 				operation_cmplt <= '1';
-			elsif doing_rd = '1' and clk_div = '1' and spi_clk_o = '1' and rd_bit_counter = X"0" then
+			elsif doing_rd = '1' and clk_div = '1' and spi_clk_o = '1' and rd_bit_counter = X"00" and RD_CONTINUOUS_IN = '0' then
 				operation_cmplt <= '1';
 			else
 				operation_cmplt <= '0';
@@ -267,7 +269,13 @@ begin
 				rd_addr_buf(0) <= '0';
 			end if;
 			if doing_rd = '1' and clk_div = '1' and spi_clk_o = '1' then
-				rd_bit_counter <= rd_bit_counter - 1;
+				if rd_bit_counter = X"00" then
+					if RD_CONTINUOUS_IN = '1' then
+						rd_bit_counter <= C_rd_cont_len;
+					end if;
+				else
+					rd_bit_counter <= rd_bit_counter - 1;
+				end if;
 			elsif doing_rd = '0' then
 				if RD_WIDTH_IN = '0' then
 					rd_bit_counter <= C_rd_8len;

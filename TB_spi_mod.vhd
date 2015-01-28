@@ -46,6 +46,7 @@ ARCHITECTURE behavior OF TB_spi_mod IS
          WR_ADDR_IN 					: IN  std_logic_vector(7 downto 0);
          WR_DATA_IN 					: IN  std_logic_vector(7 downto 0);
          WR_DATA_CMPLT_OUT 		: OUT std_logic;
+			RD_CONTINUOUS_IN 			: IN  std_logic;
          RD_IN 						: IN  std_logic;
          RD_WIDTH_IN 				: IN  std_logic;
          RD_ADDR_IN 					: IN  std_logic_vector(7 downto 0);
@@ -64,6 +65,7 @@ ARCHITECTURE behavior OF TB_spi_mod IS
    signal CLK_IN : std_logic := '0';
    signal RST_IN : std_logic := '0';
    signal WR_CONTINUOUS_IN : std_logic := '0';
+   signal RD_CONTINUOUS_IN : std_logic := '0';
    signal WE_IN : std_logic := '0';
    signal WR_ADDR_IN : std_logic_vector(7 downto 0) := (others => '0');
    signal WR_DATA_IN : std_logic_vector(7 downto 0) := (others => '0');
@@ -93,6 +95,7 @@ BEGIN
           WR_ADDR_IN => WR_ADDR_IN,
           WR_DATA_IN => WR_DATA_IN,
           WR_DATA_CMPLT_OUT => WR_DATA_CMPLT_OUT,
+			 RD_CONTINUOUS_IN => RD_CONTINUOUS_IN,
           RD_IN => RD_IN,
           RD_WIDTH_IN => RD_WIDTH_IN,
           RD_ADDR_IN => RD_ADDR_IN,
@@ -244,6 +247,87 @@ BEGIN
 		wait for 80 ns;
 		SDO <= '1';
 		wait for 80 ns;
+	
+		wait for 30 us;
+
+		RD_IN <= '0';
+		wait for CLK_IN_period;
+		RD_CONTINUOUS_IN <= '1';
+		RD_ADDR_IN <= X"62";
+		RD_IN <= '1';
+		RD_WIDTH_IN <= '0';
+		wait for CLK_IN_period;
+		RD_IN <= '0';
+		
+		wait for 820 ns;
+
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '1';
+		wait for 80 ns;
+		SDO <= '1';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		
+		wait for 820 ns;
+
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '1';
+		wait for 80 ns;
+		SDO <= '1';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '1';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		
+		wait for 820 ns;
+
+		SDO <= '1';
+		wait for 80 ns;
+		SDO <= '1';
+		wait for 80 ns;
+		SDO <= '1';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '1';
+		wait for 80 ns;
+		
+		wait for 20 us;
+		RD_CONTINUOUS_IN <= '0';
+	
+		wait for 30 us;
+		SLOW_CS_EN_IN <= '0';
+		
+		RD_IN <= '0';
+		wait for CLK_IN_period;
+		RD_ADDR_IN <= X"26";
+		RD_IN <= '1';
+		wait for CLK_IN_period;
+		RD_IN <= '0';
 	
       wait;
    end process;

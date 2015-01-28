@@ -69,6 +69,7 @@ architecture Behavioral of eth_mod is
 					WR_DATA_IN 			: in  STD_LOGIC_VECTOR (7 downto 0);
 					WR_DATA_CMPLT_OUT	: out STD_LOGIC;
 					
+					RD_CONTINUOUS_IN 				: in  STD_LOGIC;
 					RD_IN					: in	STD_LOGIC;
 					RD_WIDTH_IN 		: in  STD_LOGIC;
 					RD_ADDR_IN 			: in  STD_LOGIC_VECTOR (7 downto 0);
@@ -170,7 +171,7 @@ constant C_rx_pointer_min : unsigned(15 downto 0) := X"0000";
 constant C_rx_pointer_max : unsigned(15 downto 0) := X"0FFF";
 
 signal int, int_p, int_waiting : std_logic := '0';
-signal spi_we, spi_wr_continuous, spi_wr_cmplt : std_logic := '0';
+signal spi_we, spi_wr_continuous, spi_wr_cmplt, spi_rd_continuous : std_logic := '0';
 signal spi_rd, spi_rd_width, spi_rd_cmplt, spi_oper_cmplt : std_logic := '0';
 signal spi_wr_addr, spi_wr_data, spi_rd_addr, spi_data_rd : std_logic_vector(7 downto 0) := (others => '0');
 
@@ -359,6 +360,7 @@ type ETH_ST is (	IDLE,
 						COPY_RX_PACKET_TO_BUF3,
 						COPY_RX_PACKET_TO_BUF4,
 						COPY_RX_PACKET_TO_BUF5,
+						COPY_RX_PACKET_TO_BUF6,
 						PRE_TX_TRANSMIT0,
 						PRE_TX_TRANSMIT1,
 						HANDLE_TX_TRANSMIT0,
@@ -842,7 +844,7 @@ begin
 			when COPY_RX_PACKET_TO_BUF1 =>
 				eth_next_state <= COPY_RX_PACKET_TO_BUF2;
 			when COPY_RX_PACKET_TO_BUF2 =>
-				if spi_oper_cmplt = '1' then
+				if spi_rd_cmplt = '1' then
 					eth_next_state <= COPY_RX_PACKET_TO_BUF3;
 				end if;
 			when COPY_RX_PACKET_TO_BUF3 =>
@@ -854,6 +856,10 @@ begin
 					eth_next_state <= COPY_RX_PACKET_TO_BUF1;
 				end if;
 			when COPY_RX_PACKET_TO_BUF5 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= COPY_RX_PACKET_TO_BUF6;
+				end if;
+			when COPY_RX_PACKET_TO_BUF6 =>
 				if rx_packet_handled = '1' then
 					eth_next_state <= HANDLE_RX_INTERRUPT5;
 				end if;
@@ -1301,6 +1307,17 @@ begin
       end if;
    end process;
 
+	RD_CONTINUOUS_PROC: process(CLK_IN)
+   begin
+      if rising_edge(CLK_IN) then
+			if eth_state = COPY_RX_PACKET_TO_BUF1 then
+				spi_rd_continuous <= '1';
+			elsif eth_state = COPY_RX_PACKET_TO_BUF5 then
+				spi_rd_continuous <= '0';
+			end if;
+      end if;
+   end process;
+
 	ENC_VERSION_PROC: process(CLK_IN)
    begin
       if rising_edge(CLK_IN) then
@@ -1378,7 +1395,7 @@ begin
 
 ------------------------- RX PACKET --------------------------------
 
-	handle_rx_packet <= '1' when eth_state = COPY_RX_PACKET_TO_BUF5 else '0';
+	handle_rx_packet <= '1' when eth_state = COPY_RX_PACKET_TO_BUF6 else '0';
 	
 	process(CLK_IN)
    begin
@@ -2647,18 +2664,23 @@ begin
 	spi_mod_inst : spi_mod
 		Port Map ( 	CLK_IN 				=> CLK_IN,
 						RST_IN 				=> '0',
+						
 						WR_CONTINUOUS_IN 	=> spi_wr_continuous,
 						WE_IN 				=> spi_we,
 						WR_ADDR_IN			=> spi_wr_addr,
 						WR_DATA_IN 			=> spi_wr_data,
 						WR_DATA_CMPLT_OUT	=> spi_wr_cmplt,
+						
+						RD_CONTINUOUS_IN 	=> spi_rd_continuous,
 						RD_IN					=> spi_rd,
 						RD_WIDTH_IN 		=> spi_rd_width,
 						RD_ADDR_IN 			=> spi_rd_addr,
 						RD_DATA_OUT 		=> spi_data_rd,
 						RD_DATA_CMPLT_OUT	=> spi_rd_cmplt,
+						
 						SLOW_CS_EN_IN		=> slow_cs_en,
 						OPER_CMPLT_POST_CS_OUT => spi_oper_cmplt,
+						
 						SDI_OUT				=> SDI_OUT,
 						SDO_IN				=> SDO_IN,
 						SCLK_OUT				=> SCLK_OUT,
