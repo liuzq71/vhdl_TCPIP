@@ -595,8 +595,8 @@ begin
 	--DEBUG_OUT(7 downto 0) <= X"0"&"0"&debug_rx_flag2&debug_rx_flag1&debug_rx_flag;
 	--DEBUG_OUT(15 downto 8) <= slv(state_debug_sig);
 	
-	debug_rx_flag1 <= '1' when eth_state = COPY_RX_PACKET_TO_BUF4 else '0';
-	debug_rx_flag2 <= '1' when eth_state = COPY_RX_PACKET_TO_BUF5 else '0';
+--	debug_rx_flag1 <= '1' when eth_state = COPY_RX_PACKET_TO_BUF4 else '0';
+--	debug_rx_flag2 <= '1' when eth_state = COPY_RX_PACKET_TO_BUF5 else '0';
 	
 --	debug_state: process(CLK_IN)
 --	begin
@@ -799,6 +799,7 @@ begin
 				end if;
 			when SERVICE_INTERRUPT2 =>
 				eth_next_state <= SERVICE_INTERRUPT3;
+				--eth_next_state <= IDLE;
 			when SERVICE_INTERRUPT3 =>
 				if spi_oper_cmplt = '1' then
 					eth_next_state <= SERVICE_INTERRUPT4;

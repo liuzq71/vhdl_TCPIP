@@ -71,10 +71,11 @@ signal rd_bit_counter : unsigned(7 downto 0);
 
 signal we_ini, we_ini_p, rd_ini, rd_ini_p, doing_wr, doing_rd : std_logic := '0';
 signal operation_cmplt : std_logic := '0';
-signal operation_cmplt_reg : std_logic_vector(9 downto 0);
+signal operation_cmplt_reg : std_logic_vector(15 downto 0);
 signal wr_data_buf, wr_data_buf2 : std_logic_vector(7 downto 0);
 signal rd_addr_buf, rd_data_buf : std_logic_vector(7 downto 0) := (others => '0');
 signal doing_wr_p, doing_rd_p, load_countinous_wr : std_logic := '0';
+signal sdi_p : std_logic := '0';
 
 signal operation_cmplt_cntr : unsigned(7 downto 0) := C_oper_cmplt_init;
 signal oper_cmplt_post_cs : std_logic := '0';
@@ -83,14 +84,23 @@ begin
 
 	CS_OUT <= cs;
 	SCLK_OUT <= spi_clk_o;
-	SDI_OUT <= rd_addr_buf(7) when doing_rd = '1' else wr_data_buf(7);
+	SDI_OUT <= sdi_p;
+	
+	process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			if doing_rd = '1' then
+				sdi_p <= rd_addr_buf(7);
+			else
+				sdi_p <= wr_data_buf(7);
+			end if;
+		end if;
+	end process;
 
 	WR_DATA_CMPLT_OUT <= wr_data_cmplt;
 	RD_DATA_CMPLT_OUT <= rd_data_cmplt;
 	
 	OPER_CMPLT_POST_CS_OUT <= oper_cmplt_post_cs;
-
-	spi_clk_o <= spi_clk when (cs = '0' and (doing_wr = '1' or doing_rd = '1'))  else C_spi_clk_polarity;
 
 	process(CLK_IN)
 	begin
@@ -113,9 +123,14 @@ begin
 			if clk_div = '1' then
 				spi_clk <= not(spi_clk);
 			end if;
+			if (cs = '0' and (doing_wr = '1' or doing_rd = '1')) then
+				spi_clk_o <= spi_clk;
+			else
+				spi_clk_o <= C_spi_clk_polarity;
+			end if;
 		end if;
 	end process;
-	
+
 	process(CLK_IN)
 	begin
 		if rising_edge(CLK_IN) then
@@ -204,7 +219,7 @@ begin
 	begin
 		if rising_edge(CLK_IN) then
 			operation_cmplt_reg(0) <= operation_cmplt;
-			operation_cmplt_reg(9 downto 1) <= operation_cmplt_reg(8 downto 0);
+			operation_cmplt_reg(15 downto 1) <= operation_cmplt_reg(14 downto 0);
 			if doing_wr = '1' and clk_div = '1' and spi_clk_o = '1' and wr_bit_counter = X"0" and WR_CONTINUOUS_IN = '0' then
 				operation_cmplt <= '1';
 			elsif doing_rd = '1' and clk_div = '1' and spi_clk_o = '1' and rd_bit_counter = X"0" then
@@ -223,7 +238,7 @@ begin
 				cs <= '0';
 			elsif operation_cmplt = '1' and SLOW_CS_EN_IN = '0' then
 				cs <= '1';
-			elsif operation_cmplt_reg(9) = '1' and SLOW_CS_EN_IN = '1' then
+			elsif operation_cmplt_reg(15) = '1' and SLOW_CS_EN_IN = '1' then
 				cs <= '1';
 			end if;
 		end if;

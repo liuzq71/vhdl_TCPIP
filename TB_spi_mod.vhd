@@ -80,7 +80,7 @@ ARCHITECTURE behavior OF TB_spi_mod IS
    signal CS : std_logic;
 
    -- Clock period definitions
-   constant CLK_IN_period : time := 20 ns;
+   constant CLK_IN_period : time := 13.33 ns;
  
 BEGIN
  
@@ -154,6 +154,25 @@ BEGIN
 		wait for CLK_IN_period;
 		RD_IN <= '0';
 		
+		wait for 445 ns;
+
+		SDO <= '1';
+		wait for 53.32 ns;
+		SDO <= '0';
+		wait for 53.32 ns;
+		SDO <= '0';
+		wait for 53.32 ns;
+		SDO <= '0';
+		wait for 53.32 ns;
+		SDO <= '0';
+		wait for 53.32 ns;
+		SDO <= '1';
+		wait for 53.32 ns;	
+		SDO <= '0';
+		wait for 53.32 ns;
+		SDO <= '1';
+		wait for 53.32 ns;
+
 		wait for 30 us;
 
 		RD_IN <= '0';
@@ -165,78 +184,54 @@ BEGIN
 		RD_IN <= '0';
 		RD_WIDTH_IN <= '1';
 	
-      wait;
-   end process;
-
-   stim_proc2: process
-   begin
-      wait for 121.62 us;
-		
+		wait for 445 ns;
+	
+		SDO <= '0';
+		wait for 53.32 ns;
+		SDO <= '0';
+		wait for 53.32 ns;
+		SDO <= '0';
+		wait for 53.32 ns;
+		SDO <= '0';
+		wait for 53.32 ns;
 		SDO <= '1';
-		wait for 1.28 us;
+		wait for 53.32 ns;
 		SDO <= '0';
-		wait for 1.28 us;
+		wait for 53.32 ns;
 		SDO <= '0';
-		wait for 1.28 us;
+		wait for 53.32 ns;
 		SDO <= '0';
-		wait for 1.28 us;
-		SDO <= '0';
-		wait for 1.28 us;
+		wait for 53.32 ns;
 		SDO <= '1';
-		wait for 1.28 us;		
+		wait for 53.32 ns;
 		SDO <= '0';
-		wait for 1.28 us;
+		wait for 53.32 ns;
 		SDO <= '1';
-		wait for 1.28 us;
-		
-		wait for 30 us;
-		
-		SDO <= '0';
-		wait for 1.28 us;
-		SDO <= '0';
-		wait for 1.28 us;
-		SDO <= '0';
-		wait for 1.28 us;
-		SDO <= '0';
-		wait for 1.28 us;
+		wait for 53.32 ns;
 		SDO <= '1';
-		wait for 1.28 us;		
+		wait for 53.32 ns;
 		SDO <= '0';
-		wait for 1.28 us;
+		wait for 53.32 ns;	
 		SDO <= '0';
-		wait for 1.28 us;
+		wait for 53.32 ns;
 		SDO <= '0';
-		wait for 1.28 us;
+		wait for 53.32 ns;
 		SDO <= '1';
-		wait for 1.28 us;
+		wait for 53.32 ns;
 		SDO <= '0';
-		wait for 1.28 us;
+		wait for 53.32 ns;
+		SDO <= '0';
+		wait for 53.32 ns;
+		SDO <= '0';
+		wait for 53.32 ns;
 		SDO <= '1';
-		wait for 1.28 us;
+		wait for 53.32 ns;
+		SDO <= '0';
+		wait for 53.32 ns;	
 		SDO <= '1';
-		wait for 1.28 us;
-		SDO <= '0';
-		wait for 1.28 us;		
-		SDO <= '0';
-		wait for 1.28 us;
-		SDO <= '0';
-		wait for 1.28 us;
+		wait for 53.32 ns;
 		SDO <= '1';
-		wait for 1.28 us;
-		SDO <= '0';
-		wait for 1.28 us;
-		SDO <= '0';
-		wait for 1.28 us;
-		SDO <= '0';
-		wait for 1.28 us;
-		SDO <= '1';
-		wait for 1.28 us;
-		SDO <= '0';
-		wait for 1.28 us;		
-		SDO <= '1';
-		wait for 1.28 us;
-		SDO <= '1';
-		wait for 1.28 us;		
+		wait for 53.32 ns;
 	
       wait;
    end process;

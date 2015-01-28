@@ -178,7 +178,6 @@ signal frame_data : std_logic_vector(15 downto 0) := (others => '0');
 signal frame_rd, frame_rd_cmplt : std_logic := '0';
 
 signal sseg_data : std_logic_vector(15 downto 0) := (others => '0');
-signal debug_o : std_logic_vector(15 downto 0) := (others => '0');
 signal debug_we : std_logic := '0';
 signal debug_wr_addr : unsigned(11 downto 0) := (others => '0');
 signal debug_wr_data : std_logic_vector(7 downto 0) := (others => '0');
@@ -190,26 +189,43 @@ signal eth_command 			: std_logic_vector(3 downto 0);
 signal eth_command_err		: std_logic_vector(7 downto 0);
 signal eth_command_en, eth_command_cmplt : std_logic;
 	
+signal sdi_buf, sdo_buf, sclk_buf, sclk_buf_n, sclk_oddr, cs_buf : std_logic;
+
 begin
 	
 	clk_mod_Inst : clk_mod
 	PORT MAP ( 	CLK_50MHz_IN 	=> CLK_IN,
 					CLK_25Mhz_OUT 	=> clk_25MHz,
-					CLK_50Mhz_OUT => clk_50MHz);
+					CLK_50Mhz_OUT 	=> clk_50MHz);
 	
 --------------------------- DEBUG LOGIC ------------------------------
 	
 	LED_OUT(7 downto 3) <= (others => '0');
 	
-	SD_MISO 	<= debug_o(0);
-	SD_MOSI 	<= debug_o(1);
-	SD_CLK 	<= debug_o(2);
-	SD_CS 	<= debug_o(3);
+	SD_MISO 	<= '0';
+	SD_MOSI 	<= '0';
+	SD_CLK 	<= '0';
+	SD_CS 	<= '0';
+	
+	OBUF_inst_0: OBUF port map (I => sdi_buf, O => SDO);
+	IBUF_inst_0: IBUF port map (I => SDI, O => sdo_buf);
+	OBUF_inst_1: OBUF port map (I => sclk_oddr, O => SCLK);
+	OBUF_inst_2: OBUF port map (I => cs_buf, O => CS);
+	
+	sclk_buf_n <= not(sclk_buf);
+	
+	ODDR2_CLK: ODDR2
+   port map (
+      Q => sclk_oddr, 	-- 1-bit output data
+      C0 => sclk_buf, 	-- 1-bit clock input
+      C1 => sclk_buf_n, -- 1-bit clock input
+      CE => '1',  		-- 1-bit clock enable input
+      D0 => '1',   		-- 1-bit data input (associated with C0)
+      D1 => '0',   		-- 1-bit data input (associated with C1)
+      R => '0',    		-- 1-bit reset input
+      S => '0'     		-- 1-bit set input
+   );
 
-	SDO 	<= debug_o(0);
-	debug_o(1) <= SDI;
-	SCLK 	<= debug_o(2);
-	CS 	<= debug_o(3);
 	
 	sseg_inst : sseg
 	PORT MAP (	
@@ -313,8 +329,6 @@ begin
 				
 ------------------------- Ethernet I/O --------------------------------
 
---	sseg_data(15 downto 8) <= addr_bus;
---	sseg_data(7 downto 0) <= data_bus;
 	RESET <= '0';
 
 	eth_mod_inst : eth_mod
@@ -341,10 +355,10 @@ begin
 					  TCP_RD_DATA_OUT 		=> open,
 					  
 					  -- Eth SPI interface
-					  SDI_OUT 	=> debug_o(0),
-					  SDO_IN 	=> debug_o(1),
-					  SCLK_OUT 	=> debug_o(2),
-					  CS_OUT 	=> debug_o(3),
+					  SDI_OUT 	=> sdi_buf,
+					  SDO_IN 	=> sdo_buf,
+					  SCLK_OUT 	=> sclk_buf,
+					  CS_OUT 	=> cs_buf,
 					  INT_IN 	=> INT);
 
 end Behavioral;
