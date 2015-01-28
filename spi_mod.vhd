@@ -192,7 +192,7 @@ begin
 			elsif doing_wr = '0' then
 				wr_bit_counter <= C_wr_len;
 			end if;
-			if doing_wr = '1' and clk_div = '1' and spi_clk_o = '1' then
+			if doing_wr = '1' and clk_div = '0' and spi_clk_o = '0' then
 				if wr_bit_counter = X"0" then
 					if WR_CONTINUOUS_IN = '1' then
 						load_countinous_wr <= '1';

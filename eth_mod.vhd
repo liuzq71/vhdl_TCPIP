@@ -217,7 +217,7 @@ signal ping_enable 	: std_logic := '1';
 signal dhcp_enable 	: std_logic := '1';
 signal dhcp_addr_locked, static_addr_locked 	: std_logic := '0';
 
-signal server_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100";
+signal server_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100";	-- 192.168.1.0 (should be router_ip_address ?)
 signal server_mac_addr : std_logic_vector(47 downto 0) := X"000000000000";
 
 signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"DCEFF2CC"; -- 220.239.242.204
@@ -378,7 +378,8 @@ type ETH_ST is (	IDLE,
 						HANDLE_TX_TRANSMIT14,
 						HANDLE_TX_TRANSMIT15,
 						HANDLE_TX_TRANSMIT16,
-						HANDLE_TX_TRANSMIT17);
+						HANDLE_TX_TRANSMIT17,
+						HANDLE_TX_TRANSMIT_PRE11);
 
 signal eth_state, eth_next_state : ETH_ST := IDLE;
 signal state_debug_sig : unsigned(7 downto 0);
@@ -659,11 +660,11 @@ begin
          when IDLE =>
 				if tx_packet_ready_from_transmission = '1' then -- TODO should be "..ready_for_tran.."
 					eth_next_state <= PRE_TX_TRANSMIT0;
-				elsif int_waiting = '1' then
-					eth_next_state <= SERVICE_INTERRUPT0;
 				elsif command_waiting = '1' then
 					eth_next_state <= PARSE_COMMAND;
 				elsif poll_interrupt_reg = '1' then
+					eth_next_state <= SERVICE_INTERRUPT0;
+				elsif int_waiting = '1' then
 					eth_next_state <= SERVICE_INTERRUPT0;
 				end if;
 			when PARSE_COMMAND =>
@@ -920,7 +921,7 @@ begin
 			when HANDLE_TX_TRANSMIT2 =>
 				eth_next_state <= HANDLE_TX_TRANSMIT3;
 			when HANDLE_TX_TRANSMIT3 =>
-				if spi_oper_cmplt = '1' then	-- TODO Remove all spi_oper_cmplt
+				if spi_oper_cmplt = '1' then
 					eth_next_state <= HANDLE_TX_TRANSMIT4;
 				end if;
 			when HANDLE_TX_TRANSMIT4 =>
@@ -933,18 +934,23 @@ begin
 				eth_next_state <= HANDLE_TX_TRANSMIT7;
 			when HANDLE_TX_TRANSMIT7 =>
 				if tx_packet_length_counter = X"0000" then
-					eth_next_state <= HANDLE_TX_TRANSMIT11;
+					eth_next_state <= HANDLE_TX_TRANSMIT_PRE11;
 				else
 					eth_next_state <= HANDLE_TX_TRANSMIT8;
 				end if;
 			when HANDLE_TX_TRANSMIT8 =>
 				eth_next_state <= HANDLE_TX_TRANSMIT9;
 			when HANDLE_TX_TRANSMIT9 =>
-				if spi_oper_cmplt = '1' then
-					eth_next_state <= HANDLE_TX_TRANSMIT10;
-				end if;
+				eth_next_state <= HANDLE_TX_TRANSMIT10;
 			when HANDLE_TX_TRANSMIT10 =>
-				eth_next_state <= HANDLE_TX_TRANSMIT6;
+				if spi_wr_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT7;
+				end if;
+				
+			when HANDLE_TX_TRANSMIT_PRE11 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT11;
+				end if;
 			when HANDLE_TX_TRANSMIT11 =>
 				eth_next_state <= HANDLE_TX_TRANSMIT12;
 			when HANDLE_TX_TRANSMIT12 =>
@@ -968,6 +974,17 @@ begin
 				
 		end case;
 	end process;
+
+	WR_CONTINUOUS_PROC :process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			if eth_state = HANDLE_TX_TRANSMIT6 then
+				spi_wr_continuous <= '1';
+			elsif tx_packet_length_counter = X"0000" then
+				spi_wr_continuous <= '0';
+			end if;
+		end if;
+	end process;
 	
 	POLL_INT_PROC :process(CLK_IN)
 	begin
@@ -986,12 +1003,12 @@ begin
 		if rising_edge(CLK_IN) then
 			if eth_state = HANDLE_TX_TRANSMIT5 then
 				tx_packet_length_counter <= tx_packet_length;
-			elsif eth_state = HANDLE_TX_TRANSMIT10 then
+			elsif eth_state = HANDLE_TX_TRANSMIT9 then
 				tx_packet_length_counter <= tx_packet_length_counter - 1;
 			end if;
 			if eth_state = HANDLE_TX_TRANSMIT5 then
 				tx_packet_ram_rd_addr <= "00000000000";
-			elsif eth_state = HANDLE_TX_TRANSMIT10 then
+			elsif eth_state = HANDLE_TX_TRANSMIT9 then
 				tx_packet_ram_rd_addr <= tx_packet_ram_rd_addr + 1;
 			end if;
 --			if DEBUG_IN = '1' then
@@ -1096,7 +1113,7 @@ begin
 				spi_we <= '1';
 			elsif eth_state = HANDLE_TX_TRANSMIT4 then
 				spi_we <= '1';
-			elsif eth_state = HANDLE_TX_TRANSMIT8 then
+			elsif eth_state = HANDLE_TX_TRANSMIT6 then
 				spi_we <= '1';
 			elsif eth_state = HANDLE_TX_TRANSMIT11 then
 				spi_we <= '1';
@@ -1162,7 +1179,7 @@ begin
 				spi_wr_addr <= X"43";
 			elsif eth_state = HANDLE_TX_TRANSMIT4 then
 				spi_wr_addr <= X"7A";
-			elsif eth_state = HANDLE_TX_TRANSMIT8 then
+			elsif eth_state = HANDLE_TX_TRANSMIT6 then
 				spi_wr_addr <= X"7A";
 			elsif eth_state = HANDLE_TX_TRANSMIT11 then
 				spi_wr_addr <= X"46";
@@ -1215,7 +1232,9 @@ begin
 				spi_wr_data <= X"10";
 			elsif eth_state = HANDLE_TX_TRANSMIT4 then
 				spi_wr_data <= X"00";
-			elsif eth_state = HANDLE_TX_TRANSMIT8 then
+			elsif eth_state = HANDLE_TX_TRANSMIT6 then
+				spi_wr_data <= tx_packet_rd_data;
+			elsif eth_state = HANDLE_TX_TRANSMIT10 then
 				spi_wr_data <= tx_packet_rd_data;
 			elsif eth_state = HANDLE_TX_TRANSMIT11 then
 				spi_wr_data <= slv(tx_packet_end_pointer(7 downto 0));
@@ -1857,22 +1876,23 @@ begin
 				end if;
 			when CHECK_TCP_PSH_ACK_PACKET1 =>
 				if tcp_acknowledge_number = unsigned(rx_tcp_seq_number) then
-					packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET2;
+					packet_handler_next_state <= TRIGGER_TCP_ACK; -- Trigger ack first so data can be read out in parallel
 				else
 					packet_handler_next_state <= COMPLETE;
 				end if;
+				
 			when CHECK_TCP_PSH_ACK_PACKET2 =>
 				packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET3;
 			when CHECK_TCP_PSH_ACK_PACKET3 =>
-				packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET4;
+				packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET4; 
 			when CHECK_TCP_PSH_ACK_PACKET4 =>
 				if RESIZE(rx_packet_ram_rd_addr, 16) >= total_packet_length then
-					packet_handler_next_state <= TRIGGER_TCP_ACK;
+					packet_handler_next_state <= COMPLETE;
 				end if;
-				
+
 			when TRIGGER_TCP_ACK =>
 				if tx_packet_state = INIT_TCP_PACKET_METADATA then
-					packet_handler_next_state <= COMPLETE;
+					packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET2;
 				end if;
 				
 			when COMPLETE =>

@@ -141,6 +141,18 @@ BEGIN
 		wait for CLK_IN_period;
 		WE_IN <= '0';
 	
+		wait for 1310 ns;
+		WR_DATA_IN <= X"2B";
+		
+		wait for 640 ns;
+		WR_DATA_IN <= X"E7";
+		
+		wait for 640 ns;
+		WR_DATA_IN <= X"A1";
+		
+		wait for 640 ns;
+		WR_DATA_IN <= X"43";
+		
 		wait for 50 us;
 		WR_CONTINUOUS_IN <= '0';
 		

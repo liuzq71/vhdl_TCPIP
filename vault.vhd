@@ -200,7 +200,7 @@ begin
 	
 --------------------------- DEBUG LOGIC ------------------------------
 	
-	LED_OUT(7 downto 3) <= (others => '0');
+	LED_OUT(7 downto 4) <= (others => '0');
 	
 	SD_MISO 	<= '0';
 	SD_MOSI 	<= '0';
@@ -341,7 +341,7 @@ begin
 
 					  COMMAND_IN			=> eth_command,
 					  COMMAND_EN_IN		=> eth_command_en,
-					  COMMAND_CMPLT_OUT 	=> eth_command_cmplt,
+					  COMMAND_CMPLT_OUT 	=> LED_OUT(3),
 					  ERROR_OUT 			=> eth_command_err,
 					  
 					  -- Data Interface
