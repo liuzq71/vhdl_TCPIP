@@ -9,6 +9,7 @@
 
 ## Clock pin for Nexys 2 Board
 NET "CLK_IN" LOC = "B8";    # Bank = 0, Pin name = IP_L13P_0/GCLK8, Type = GCLK,                 Sch name = GCLK0
+NET "CLK_IN" TNM_NET = "CLK_IN";
 TIMESPEC TS_CLK_IN = PERIOD "CLK_IN" 20 ns HIGH 50 %;
 
 #NET "clk1"        LOC = "U9";    # Bank = 2, Pin name = IO_L13P_2/D4/GCLK14, Type = DUAL/GCLK,        Sch name = GCLK1
@@ -201,11 +202,14 @@ NET "Vsync"       LOC = "U3";    # Bank = 2, Pin name = IO_L01P_2/CSO_B, Type = 
 #NET "JA<0>"      LOC = "L15";   # Bank = 1, Pin name = IO_L09N_1/A11, Type = DUAL,                   Sch name = JA1
 #NET "JA<1>"      LOC = "K12";   # Bank = 1, Pin name = IO_L11N_1/A9/RHCLK1, Type = RHCLK/DUAL,       Sch name = JA2
 NET "INT"        	LOC = "L17";   # Bank = 1, Pin name = IO_L10N_1/VREF_1, Type = VREF,     				Sch name = JA3 
-NET "CS"      		LOC = "M15" | SLEW = "FAST" | DRIVE = "24";   # Bank = 1, Pin name = IO_L07P_1, Type = I/O,                        Sch name = JA4 
+NET "CS"      		LOC = "M15";   # Bank = 1, Pin name = IO_L07P_1, Type = I/O,                        Sch name = JA4 
 NET "RESET"       LOC = "K13";   # Bank = 1, Pin name = IO_L11P_1/A10/RHCLK0, Type = RHCLK/DUAL,      Sch name = JA7 
-NET "SCLK" 			LOC = "L16" | SLEW = "FAST" | DRIVE = "24" | PULLDOWN;   # Bank = 1, Pin name = IO_L09P_1/A12, Type = DUAL,                   Sch name = JA8
-NET "SDO"      	LOC = "M14" | SLEW = "FAST" | DRIVE = "24";   # Bank = 1, Pin name = IO_L05P_1, Type = I/O,                        Sch name = JA9
+NET "SCLK" 			LOC = "L16";   # Bank = 1, Pin name = IO_L09P_1/A12, Type = DUAL,                   Sch name = JA8
+NET "SDO"      	LOC = "M14";   # Bank = 1, Pin name = IO_L05P_1, Type = I/O,                        Sch name = JA9
 NET "SDI"       	LOC = "M16";   # Bank = 1, Pin name = IO_L07N_1, Type = I/O,                        Sch name = JA10
+
+NET "SCLK" TNM_NET = "SCLK";
+TIMESPEC TS_SCLK = PERIOD "SCLK" 160 ns HIGH 50 %;
 
 ##JB
 #NET "SDO"       LOC = "M13";   # Bank = 1, Pin name = IO_L05N_1/VREF_1, Type = VREF,                Sch name = JB1
@@ -220,12 +224,12 @@ NET "TX_OUT"       LOC = "U18";   # Bank = 1, Pin name = IO_L01P_1/A16, Type = D
 ##JC
 #NET "JC<0>"       LOC = "G15";   # Bank = 1, Pin name = IO_L18P_1, Type = I/O,                        Sch name = JC1
 #NET "JC<1>"       LOC = "J16";   # Bank = 1, Pin name = IO_L13N_1/A5/RHCLK5, Type = RHCLK/DUAL,       Sch name = JC2
-NET "SD_CS"       LOC = "G13" | SLEW = "FAST";   # Bank = 1, Pin name = IO_L20N_1, Type = I/O,                        Sch name = JC3
-NET "SD_MOSI"     LOC = "H16" | SLEW = "FAST";   # Bank = 1, Pin name = IO_L16P_1, Type = I/O,                        Sch name = JC4
-NET "SD_CLK"      LOC = "H15" | SLEW = "FAST";   # Bank = 1, Pin name = IO_L17N_1, Type = I/O,                        Sch name = JC7
+NET "SD_CS"       LOC = "G13";   # Bank = 1, Pin name = IO_L20N_1, Type = I/O,                        Sch name = JC3
+NET "SD_MOSI"     LOC = "H16";   # Bank = 1, Pin name = IO_L16P_1, Type = I/O,                        Sch name = JC4
+NET "SD_CLK"      LOC = "H15";   # Bank = 1, Pin name = IO_L17N_1, Type = I/O,                        Sch name = JC7
 #NET "JC<5>"       LOC = "F14";   # Bank = 1, Pin name = IO_L21N_1, Type = I/O,                        Sch name = JC8
 #NET "JC<6>"       LOC = "G16";   # Bank = 1, Pin name = IO_L18N_1, Type = I/O,                        Sch name = JC9
-NET "SD_MISO"     LOC = "J12" | SLEW = "FAST";   # Bank = 1, Pin name = IO_L15P_1/A2, Type = DUAL,                    Sch name = JC10
+NET "SD_MISO"     LOC = "J12";   # Bank = 1, Pin name = IO_L15P_1/A2, Type = DUAL,                    Sch name = JC10
 
 ##JD - NOTE: For other JD pins see LD(3:0) above under "Leds"
 #NET "JD<0>"       LOC = "J13";   # Bank = 1, Pin name = IO_L15N_1/A1, Type = DUAL,                    Sch name = JD1

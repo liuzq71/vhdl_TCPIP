@@ -207,11 +207,11 @@ begin
 	SD_CLK 	<= '0';
 	SD_CS 	<= '0';
 	
-	OBUF_inst_0: OBUF port map (I => sdi_buf, O => SDO);
+	OBUF_inst_0: OBUF generic map ( DRIVE => 12, IOSTANDARD => "DEFAULT", SLEW => "FAST") port map (I => sdi_buf, O => SDO);
 	IBUF_inst_0: IBUF port map (I => SDI, O => sdo_buf);
-	OBUF_inst_1: OBUF port map (I => sclk_oddr, O => SCLK);
-	OBUF_inst_2: OBUF port map (I => cs_buf, O => CS);
-	
+	OBUF_inst_1: OBUF generic map ( DRIVE => 12, IOSTANDARD => "DEFAULT", SLEW => "FAST") port map (I => sclk_oddr, O => SCLK);
+	OBUF_inst_2: OBUF generic map ( DRIVE => 12, IOSTANDARD => "DEFAULT", SLEW => "FAST") port map (I => cs_buf, O => CS);
+
 	sclk_buf_n <= not(sclk_buf);
 	
 	ODDR2_CLK: ODDR2
@@ -336,6 +336,9 @@ begin
 						RESET_IN => '0',
 				  
 					  -- Command interface
+--					  COMMAND_IN			=> SW_IN(3 downto 0),
+--					  COMMAND_EN_IN		=> buttons_edge(0),
+
 					  COMMAND_IN			=> eth_command,
 					  COMMAND_EN_IN		=> eth_command_en,
 					  COMMAND_CMPLT_OUT 	=> eth_command_cmplt,

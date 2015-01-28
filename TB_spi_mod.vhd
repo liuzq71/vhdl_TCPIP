@@ -80,7 +80,7 @@ ARCHITECTURE behavior OF TB_spi_mod IS
    signal CS : std_logic;
 
    -- Clock period definitions
-   constant CLK_IN_period : time := 13.33 ns;
+   constant CLK_IN_period : time := 20 ns;
  
 BEGIN
  
@@ -154,24 +154,24 @@ BEGIN
 		wait for CLK_IN_period;
 		RD_IN <= '0';
 		
-		wait for 445 ns;
+		wait for 670 ns;
 
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
+		SDO <= '0';
+		wait for 80 ns;
 		SDO <= '1';
-		wait for 53.32 ns;
-		SDO <= '0';
-		wait for 53.32 ns;
-		SDO <= '0';
-		wait for 53.32 ns;
-		SDO <= '0';
-		wait for 53.32 ns;
-		SDO <= '0';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '1';
-		wait for 53.32 ns;	
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;
-		SDO <= '1';
-		wait for 53.32 ns;
+		wait for 80 ns;
 
 		wait for 30 us;
 
@@ -184,54 +184,54 @@ BEGIN
 		RD_IN <= '0';
 		RD_WIDTH_IN <= '1';
 	
-		wait for 445 ns;
+		wait for 670 ns;
 	
 		SDO <= '0';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '1';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '1';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '1';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '1';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;	
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '1';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '1';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '0';
-		wait for 53.32 ns;	
+		wait for 80 ns;
 		SDO <= '1';
-		wait for 53.32 ns;
+		wait for 80 ns;
 		SDO <= '1';
-		wait for 53.32 ns;
+		wait for 80 ns;
 	
       wait;
    end process;

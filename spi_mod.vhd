@@ -275,7 +275,7 @@ begin
 					rd_bit_counter <= C_rd_16len;
 				end if;
 			end if;
-			if doing_rd = '1' and clk_div = '1' and spi_clk_o = '0' then 
+			if doing_rd = '1' and clk_div = '0' and spi_clk_o = '0' then 
 				if rd_bit_counter < C_rd_8len then
 					rd_data_buf(7 downto 1) <= rd_data_buf(6 downto 0);
 					rd_data_buf(0) <= SDO_IN;

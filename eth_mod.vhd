@@ -179,7 +179,7 @@ signal frame_data : std_logic_vector(15 downto 0);
 signal frame_data_rd, frame_rd_cmplt, slow_cs_en : std_logic := '0';
 signal network_interface_enabled : std_logic := '0';
 
-signal command_cmplt 	: std_logic := '0';
+signal command_cmplt, command_trig, command_en_in_p 	: std_logic := '0';
 signal init_cmnd_addr 	: unsigned(7 downto 0);
 
 signal enc28j60_version 			: std_logic_vector(7 downto 0) := (others => '0');
@@ -561,7 +561,7 @@ signal tx_packet_state, tx_packet_next_state : TX_PACKET_CONFIG_ST := IDLE;
 
 begin
 	
-	--DEBUG_OUT(15 downto 8) <= X"00";
+	DEBUG_OUT(15 downto 8) <= X"00";
 	--DEBUG_OUT <= slv(rx_data_length);
 	--DEBUG_OUT <= udp_source_port when DEBUG_IN = '0' else udp_dest_port;
 	--DEBUG_OUT <= rx_tcp_source_port when DEBUG_IN = '0' else rx_tcp_dest_port;
@@ -575,12 +575,12 @@ begin
 	--DEBUG_OUT <= dhcp_option & dhcp_option_length;
 	--DEBUG_OUT(7 downto 0) <= slv(init_cmnd_addr);
 	--DEBUG_OUT(7 downto 0) <= slv(state_debug_sig);
-	--DEBUG_OUT(7 downto 0) <= enc28j60_version;
+	DEBUG_OUT(7 downto 0) <= enc28j60_version;
 	--DEBUG_OUT(7 downto 0) <= phy_reg_upr;
 	--DEBUG_OUT(7 downto 0) <= slv(interrupt_counter);
 	--DEBUG_OUT(7 downto 0) <= slv(eir_register);
 	--DEBUG_OUT <= spi_wr_addr & spi_wr_data;
-	DEBUG_OUT <= next_packet_pointer;
+	--DEBUG_OUT <= next_packet_pointer;
 	--DEBUG_OUT <= rx_packet_status_vector(15 downto 0) when DEBUG_IN = '0' else rx_packet_status_vector(31 downto 16);
 	--DEBUG_OUT <= rx_packet_source_mac(15 downto 0) when DEBUG_IN = '0' else rx_packet_source_mac(31 downto 16);
 	--DEBUG_OUT <= arp_target_ip_addr(15 downto 0) when DEBUG_IN = '0' else arp_target_ip_addr(31 downto 16);
@@ -799,7 +799,6 @@ begin
 				end if;
 			when SERVICE_INTERRUPT2 =>
 				eth_next_state <= SERVICE_INTERRUPT3;
-				--eth_next_state <= IDLE;
 			when SERVICE_INTERRUPT3 =>
 				if spi_oper_cmplt = '1' then
 					eth_next_state <= SERVICE_INTERRUPT4;
@@ -1332,12 +1331,18 @@ begin
 	COMMAND_PROC: process(CLK_IN)
    begin
       if rising_edge(CLK_IN) then
-			if COMMAND_EN_IN = '1' then
+			command_en_in_p <= COMMAND_EN_IN;
+			if command_en_in_p = '0' and COMMAND_EN_IN = '1' then
+				command_trig <= '1';
+			else
+				command_trig <= '0';
+			end if;
+			if command_trig = '1' then
 				command_waiting <= '1';
 			elsif eth_state = PARSE_COMMAND then
 				command_waiting <= '0';
 			end if;
-			if COMMAND_EN_IN = '1' then
+			if command_trig = '1' then
 				command <= COMMAND_IN;
 			end if;
 		end if;
