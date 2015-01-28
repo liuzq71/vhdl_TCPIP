@@ -655,7 +655,7 @@ begin
 	NEXT_STATE_DECODE: process (eth_state, command, command_waiting, init_cmnd_addr, poll_interrupt_reg,
 											phy_rd_counter, frame_data, tx_packet_ready_from_transmission, spi_oper_cmplt, 
 												eir_register, previous_packet_pointer, next_packet_pointer, rx_packet_handled, 
-													tx_packet_length_counter)
+													tx_packet_length_counter, int_waiting, spi_rd_cmplt, spi_wr_cmplt)
    begin
       eth_next_state <= eth_state;  --default is to stay in current state
       case (eth_state) is
@@ -1478,7 +1478,8 @@ begin
 																dhcp_magic_cookie, dhcp_option, dhcp_option_length, dhcp_option_addr, expecting_syn_ack,
 																	dhcp_message_type, expecting_dhcp_offer, expecting_dhcp_ack, rx_tcp_source_port,
 																		server_port, rx_tcp_dest_port, tcp_port, ping_enable, rx_tcp_header_length, tcp_sequence_number_p1, 
-																			rx_tcp_ack_number, tcp_sequence_number, tcp_acknowledge_number, rx_tcp_seq_number, rx_packet_ram_rd_addr)
+																			rx_tcp_ack_number, tcp_sequence_number, tcp_acknowledge_number, rx_tcp_seq_number, rx_packet_ram_rd_addr,
+																				tx_packet_state)
    begin
       packet_handler_next_state <= packet_handler_state;  --default is to stay in current state
       case (packet_handler_state) is

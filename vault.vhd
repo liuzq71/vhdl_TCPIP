@@ -332,7 +332,7 @@ begin
 	RESET <= '0';
 
 	eth_mod_inst : eth_mod
-		 Port Map ( CLK_IN 	=> clk_25MHz,
+		 Port Map ( CLK_IN 	=> clk_50MHz,
 						RESET_IN => '0',
 				  
 					  -- Command interface
