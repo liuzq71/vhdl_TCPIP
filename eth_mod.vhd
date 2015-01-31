@@ -223,8 +223,8 @@ signal dhcp_addr_locked, static_addr_locked 	: std_logic := '0';
 signal server_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100";	-- 192.168.1.0 (should be router_ip_address ?)
 signal server_mac_addr : std_logic_vector(47 downto 0) := X"000000000000";
 
---signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"76D24459"; -- 118.210.68.89
-signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100"; -- 192.168.1.0
+signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"76D24459"; -- 118.210.68.89
+--signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100"; -- 192.168.1.0
 
 signal tx_packet_frame_addr :unsigned(10 downto 0);
 signal tx_packet_length, tx_packet_length_counter, tx_packet_end_pointer :unsigned(15 downto 0);
@@ -270,8 +270,8 @@ signal server_port 	: std_logic_vector(15 downto 0) := X"0DA2";
 signal tcp_sequence_number, tcp_acknowledge_number : unsigned(31 downto 0) := (others => '0');
 signal tcp_sequence_number_p1 : unsigned(31 downto 0) := (others => '0');
 signal tcp_flags : std_logic_vector(7 downto 0) := (others => '0');
-signal window_size : std_logic_vector(15 downto 0) := X"0200";
-signal send_tcp_svn_packet, send_tcp_ack_packet, cancel_dhcp_connect : std_logic := '0';
+signal window_size : std_logic_vector(15 downto 0) := X"1000";
+signal send_tcp_svn_packet, send_tcp_ack_packet, cancel_dhcp_connect, trigger_ack : std_logic := '0';
 signal tcp_connection_active, close_tcp_connection, cancel_tcp_connection : std_logic := '0';
 signal tcp_ip_identification : unsigned(15 downto 0);
 
@@ -291,7 +291,7 @@ signal tcp_rx_data_wr_addr_m1 : unsigned(8 downto 0) := (others => '0');
 signal tcp_rx_data : unsigned(7 downto 0) := (others => '0');
 signal tcp_rx_data_rd_data : std_logic_vector(7 downto 0) := (others => '0');
 
-signal clk_1hz : std_logic := '0';
+signal clk_1hz, clk_1hz_prev : std_logic := '0';
 signal rx_kbytes_sec, tx_kbytes_sec : unsigned(11 downto 0);
 signal rx_bytes_counter, tx_bytes_counter : unsigned(21 downto 0);
 
@@ -529,7 +529,8 @@ type PACKET_HANDLER_ST is (	IDLE,
 										CHECK_TCP_PSH_ACK_PACKET2,
 										CHECK_TCP_PSH_ACK_PACKET3,
 										CHECK_TCP_PSH_ACK_PACKET4,
-										TRIGGER_TCP_ACK,
+										TRIGGER_TCP_ACK0,
+										TRIGGER_TCP_ACK1,
 										COMPLETE
 									);
 										
@@ -1469,7 +1470,7 @@ begin
 	send_dhcp_discover <= '1' when eth_state = TRIGGER_DHCP_DISCOVER else '0';
 	send_dhcp_request <= '1' when packet_handler_state = TRIGGER_DHCP_REQUEST else '0';
 	send_tcp_svn_packet <= '1' when eth_state = TRIGGER_NEW_TCP_CONNECTION else '0';
-	send_tcp_ack_packet <= '1' when packet_handler_state = TRIGGER_TCP_ACK else '0';
+	send_tcp_ack_packet <= '1' when packet_handler_state = TRIGGER_TCP_ACK1 else '0';
 	cancel_dhcp_connect <= '1' when eth_state = TRIGGER_CANCEL_DHCP_CONNECT else '0';
 	close_tcp_connection <= '1' when eth_state = TRIGGER_CLOSE_TCP_CONNECTION else '0';
 	cancel_tcp_connection <= '1' when eth_state = TRIGGER_CANCEL_TCP_CONNECTION else '0';
@@ -1888,7 +1889,7 @@ begin
 					packet_handler_next_state <= COMPLETE;
 				end if;
 			when CHECK_TCP_SYN_ACK_PACKET2 =>
-				packet_handler_next_state <= TRIGGER_TCP_ACK;
+				packet_handler_next_state <= TRIGGER_TCP_ACK1;
 				
 			when CHECK_TCP_PSH_ACK_PACKET0 =>
 				if tcp_sequence_number = unsigned(rx_tcp_ack_number) then
@@ -1898,7 +1899,7 @@ begin
 				end if;
 			when CHECK_TCP_PSH_ACK_PACKET1 =>
 				if tcp_acknowledge_number = unsigned(rx_tcp_seq_number) then
-					packet_handler_next_state <= TRIGGER_TCP_ACK; -- Trigger ack first so data can be read out in parallel
+					packet_handler_next_state <= TRIGGER_TCP_ACK0; -- Trigger ack first so data can be read out in parallel
 				else
 					packet_handler_next_state <= COMPLETE;
 				end if;
@@ -1912,7 +1913,13 @@ begin
 					packet_handler_next_state <= COMPLETE;
 				end if;
 
-			when TRIGGER_TCP_ACK =>
+			when TRIGGER_TCP_ACK0 =>
+				if trigger_ack = '1' then
+					packet_handler_next_state <= TRIGGER_TCP_ACK1;
+				else
+					packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET2;
+				end if;
+			when TRIGGER_TCP_ACK1 =>
 				if tx_packet_state = INIT_TCP_PACKET_METADATA then
 					packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET2;
 				end if;
@@ -1921,6 +1928,15 @@ begin
 				packet_handler_next_state <= IDLE;
 				
 		end case;
+	end process;
+
+	TRIGGER_ACK_PROC: process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			if packet_handler_state = TRIGGER_TCP_ACK0 then
+				trigger_ack <= not(trigger_ack);
+			end if;
+		end if;
 	end process;
 
 	RX_PACKET_RD_ADDR: process(CLK_IN)
@@ -2467,7 +2483,7 @@ begin
 			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				tcp_ip_identification <= unsigned(lfsr_val(15 downto 0));
-			elsif packet_handler_state = TRIGGER_TCP_ACK then
+			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
 				tcp_ip_identification <= tcp_ip_identification + 1;
 			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
@@ -2487,11 +2503,11 @@ begin
 			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				tcp_flags <= C_tcp_syn_flags;
-			elsif packet_handler_state = TRIGGER_TCP_ACK then
+			elsif packet_handler_state = TRIGGER_TCP_ACK1 then
 				tcp_flags <= C_tcp_ack_flags;
 			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
-				window_size <= X"0400";
+				window_size <= X"1000";
 			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				expecting_syn_ack <= '1';
@@ -2752,10 +2768,11 @@ begin
 	process(CLK_IN)
 	begin
 		if rising_edge(CLK_IN) then
-			if clk_1hz = '1' then
+			clk_1hz_prev <= clk_1hz;
+			if clk_1hz_prev = '0' and clk_1hz = '1' then
 				rx_kbytes_sec <= rx_bytes_counter(21 downto 10);
 			end if;
-			if clk_1hz = '1' then
+			if clk_1hz_prev = '0' and clk_1hz = '1' then
 				rx_bytes_counter <= (others => '0');
 			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
 				rx_bytes_counter <= rx_bytes_counter + RESIZE(total_packet_length, 22);
