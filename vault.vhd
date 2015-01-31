@@ -151,6 +151,8 @@ architecture Behavioral of vault is
 			  TCP_RD_DATA_EN_IN 		: in STD_LOGIC;
 			  TCP_RD_DATA_OUT 		: out STD_LOGIC_VECTOR (7 downto 0);
 			  
+			  CLK_1HZ_IN	: in STD_LOGIC;
+			  
 			  -- Eth SPI interface
 			  SDI_OUT 	: out  STD_LOGIC;
            SDO_IN 	: in  STD_LOGIC;
@@ -332,7 +334,7 @@ begin
 	RESET <= '0';
 
 	eth_mod_inst : eth_mod
-		 Port Map ( CLK_IN 	=> clk_50MHz,
+		 Port Map ( CLK_IN 	=> clk_25MHz,
 						RESET_IN => '0',
 				  
 					  -- Command interface
@@ -349,13 +351,14 @@ begin
 					  DATA_OUT 	=> data_bus,
 					  
 --					  DEBUG_IN	=> buttons(1),
---					  DEBUG_OUT	=> debug_o,
 					  DEBUG_OUT	=> sseg_data,
 					  
 					  -- TCP Connection Interface
 					  TCP_RD_DATA_AVAIL_OUT => LED_OUT(2),
 					  TCP_RD_DATA_EN_IN 		=> buttons(0),
 					  TCP_RD_DATA_OUT 		=> open,
+					  
+					  CLK_1HZ_IN	=> clk_1hz,
 					  
 					  -- Eth SPI interface
 					  SDI_OUT 	=> sdi_buf,

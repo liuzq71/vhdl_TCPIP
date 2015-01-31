@@ -49,6 +49,8 @@ entity eth_mod is
 			  TCP_RD_DATA_EN_IN 		: in STD_LOGIC;
 			  TCP_RD_DATA_OUT 		: out STD_LOGIC_VECTOR (7 downto 0);
            
+			  CLK_1HZ_IN	: in STD_LOGIC;
+			  
 			  -- Eth SPI interface
 			  SDI_OUT 	: out  STD_LOGIC;
            SDO_IN 	: in  STD_LOGIC;
@@ -124,11 +126,10 @@ architecture Behavioral of eth_mod is
 				 DATA_B_OUT : out STD_LOGIC_VECTOR (G_DATA_A_SIZE/(2**G_RELATION)-1 downto 0));
 	END COMPONENT;
 	
-	--COMPONENT Packet_Definition_LX9
 	COMPONENT Packet_Definition
 	  PORT (
 		 clka 	: IN STD_LOGIC;
-		 addra 	: IN STD_LOGIC_VECTOR(11 DOWNTO 0);
+		 addra 	: IN STD_LOGIC_VECTOR(10 DOWNTO 0);
 		 douta 	: OUT STD_LOGIC_VECTOR(15 DOWNTO 0));
 	END COMPONENT;
 
@@ -136,19 +137,20 @@ subtype slv is std_logic_vector;
 
 constant C_init_cmnds_start_addr 	: std_logic_vector(7 downto 0) := X"01";
 constant C_init_cmnds_max_addr 		: std_logic_vector(7 downto 0) := X"7F";
-constant C_arp_reply_frame_addr 		: std_logic_vector(11 downto 0) := X"080";
-constant C_icmp_reply_frame_addr 	: std_logic_vector(11 downto 0) := X"0AB";
-constant C_dhcp_discover_frame_addr : std_logic_vector(11 downto 0) := X"124";
-constant C_dhcp_request_frame_addr 	: std_logic_vector(11 downto 0) := X"286";
-constant C_arp_request_frame_addr 	: std_logic_vector(11 downto 0) := X"467";
-constant C_tcp_packet_frame_addr 	: std_logic_vector(11 downto 0) := X"492";
+
+constant C_arp_reply_frame_addr 		: std_logic_vector(10 downto 0) := "000"&X"80";
+constant C_icmp_reply_frame_addr 	: std_logic_vector(10 downto 0) := "000"&X"AB";
+constant C_dhcp_discover_frame_addr : std_logic_vector(10 downto 0) := "001"&X"24";
+constant C_dhcp_request_frame_addr 	: std_logic_vector(10 downto 0) := "010"&X"86";
+constant C_arp_request_frame_addr 	: std_logic_vector(10 downto 0) := "100"&X"67";
+constant C_tcp_packet_frame_addr 	: std_logic_vector(10 downto 0) := "100"&X"92";
 
 constant C_arp_reply_length 		: std_logic_vector(15 downto 0) := X"002A";
 constant C_icmp_reply_length 		: std_logic_vector(15 downto 0) := X"0062";
 constant C_dhcp_discover_length 	: std_logic_vector(15 downto 0) := X"0156";
 constant C_dhcp_request_length 	: std_logic_vector(15 downto 0) := X"015C";
 constant C_arp_request_length 	: std_logic_vector(15 downto 0) := X"002A";
-constant C_tcp_packet_length 		: std_logic_vector(15 downto 0) := X"004A";
+constant C_tcp_packet_length 		: std_logic_vector(15 downto 0) := X"0042";
 
 constant C_ARP_Packet_Type 		: std_logic_vector(15 downto 0) := X"0806";
 constant C_IP_Packet_Type 			: std_logic_vector(15 downto 0) := X"0800";
@@ -175,7 +177,7 @@ signal spi_we, spi_wr_continuous, spi_wr_cmplt, spi_rd_continuous : std_logic :=
 signal spi_rd, spi_rd_width, spi_rd_cmplt, spi_oper_cmplt : std_logic := '0';
 signal spi_wr_addr, spi_wr_data, spi_rd_addr, spi_data_rd : std_logic_vector(7 downto 0) := (others => '0');
 
-signal frame_addr : std_logic_vector(11 downto 0);
+signal frame_addr : std_logic_vector(10 downto 0);
 signal frame_data : std_logic_vector(15 downto 0);
 signal frame_data_rd, frame_rd_cmplt, slow_cs_en : std_logic := '0';
 signal network_interface_enabled : std_logic := '0';
@@ -221,9 +223,10 @@ signal dhcp_addr_locked, static_addr_locked 	: std_logic := '0';
 signal server_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100";	-- 192.168.1.0 (should be router_ip_address ?)
 signal server_mac_addr : std_logic_vector(47 downto 0) := X"000000000000";
 
-signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"DCEFF2CC"; -- 220.239.242.204
+--signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"76D24459"; -- 118.210.68.89
+signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100"; -- 192.168.1.0
 
-signal tx_packet_frame_addr :unsigned(11 downto 0);
+signal tx_packet_frame_addr :unsigned(10 downto 0);
 signal tx_packet_length, tx_packet_length_counter, tx_packet_end_pointer :unsigned(15 downto 0);
 signal doing_tx_packet_config, tx_packet_frame_data_rd : std_logic := '0';
 signal packet_instruction, packet_data : std_logic_vector(7 downto 0);
@@ -259,7 +262,7 @@ signal expecting_syn_ack : std_logic := '0';
 signal dhcp_option_addr : unsigned(10 downto 0);
 signal dhcp_option, dhcp_option_length, dhcp_message_type : std_logic_vector(7 downto 0);
 
-signal packet_definition_addr : std_logic_vector(11 downto 0);
+signal packet_definition_addr : std_logic_vector(10 downto 0);
 signal packet_definition_data : std_logic_vector(15 downto 0);
 
 signal tcp_port 		: std_logic_vector(15 downto 0) := (others => '0');
@@ -287,6 +290,10 @@ signal tcp_rx_data_rd_addr : unsigned(8 downto 0) := (others => '0');
 signal tcp_rx_data_wr_addr_m1 : unsigned(8 downto 0) := (others => '0');
 signal tcp_rx_data : unsigned(7 downto 0) := (others => '0');
 signal tcp_rx_data_rd_data : std_logic_vector(7 downto 0) := (others => '0');
+
+signal clk_1hz : std_logic := '0';
+signal rx_kbytes_sec, tx_kbytes_sec : unsigned(11 downto 0);
+signal rx_bytes_counter, tx_bytes_counter : unsigned(21 downto 0);
 
 type ETH_ST is (	IDLE,
 						PARSE_COMMAND,
@@ -564,7 +571,8 @@ signal tx_packet_state, tx_packet_next_state : TX_PACKET_CONFIG_ST := IDLE;
 
 begin
 	
-	DEBUG_OUT(15 downto 8) <= X"00";
+	--DEBUG_OUT(15 downto 8) <= X"00";
+	DEBUG_OUT(15 downto 12) <= X"0";
 	--DEBUG_OUT <= slv(rx_data_length);
 	--DEBUG_OUT <= udp_source_port when DEBUG_IN = '0' else udp_dest_port;
 	--DEBUG_OUT <= rx_tcp_source_port when DEBUG_IN = '0' else rx_tcp_dest_port;
@@ -578,7 +586,7 @@ begin
 	--DEBUG_OUT <= dhcp_option & dhcp_option_length;
 	--DEBUG_OUT(7 downto 0) <= slv(init_cmnd_addr);
 	--DEBUG_OUT(7 downto 0) <= slv(state_debug_sig);
-	DEBUG_OUT(7 downto 0) <= enc28j60_version;
+	--DEBUG_OUT(7 downto 0) <= enc28j60_version;
 	--DEBUG_OUT(7 downto 0) <= phy_reg_upr;
 	--DEBUG_OUT(7 downto 0) <= slv(interrupt_counter);
 	--DEBUG_OUT(7 downto 0) <= slv(eir_register);
@@ -597,6 +605,7 @@ begin
 	--DEBUG_OUT(3 downto 0) <= ip_packet_version;
 	--DEBUG_OUT(7 downto 0) <= X"0"&"0"&debug_rx_flag2&debug_rx_flag1&debug_rx_flag;
 	--DEBUG_OUT(15 downto 8) <= slv(state_debug_sig);
+	DEBUG_OUT(11 downto 0) <= slv(rx_kbytes_sec);
 	
 --	debug_rx_flag1 <= '1' when eth_state = COPY_RX_PACKET_TO_BUF4 else '0';
 --	debug_rx_flag2 <= '1' when eth_state = COPY_RX_PACKET_TO_BUF5 else '0';
@@ -621,10 +630,7 @@ begin
 	frame_data <= packet_definition_data;
 	frame_rd_cmplt <= '1';
 	
-	--FRAME_DATA_RD_OUT <= frame_data_rd when doing_tx_packet_config = '0' else tx_packet_frame_data_rd;
-	
-	--frame_data <= FRAME_DATA_IN;
-	--frame_rd_cmplt <= FRAME_DATA_RD_CMPLT_IN;
+	clk_1hz <= CLK_1HZ_IN;
 
 	---- HANDLE COMMANDS ----
 	
@@ -664,9 +670,7 @@ begin
 					eth_next_state <= PRE_TX_TRANSMIT0;
 				elsif command_waiting = '1' then
 					eth_next_state <= PARSE_COMMAND;
-				elsif poll_interrupt_reg = '1' then
-					eth_next_state <= SERVICE_INTERRUPT0;
-				elsif int_waiting = '1' then
+				else
 					eth_next_state <= SERVICE_INTERRUPT0;
 				end if;
 			when PARSE_COMMAND =>
@@ -1051,7 +1055,7 @@ begin
    begin
       if rising_edge(CLK_IN) then
 			if eth_state = HANDLE_INIT_CMND1 then
-				frame_addr <= X"0" & slv(init_cmnd_addr);
+				frame_addr <= "000" & slv(init_cmnd_addr);
 			end if;
       end if;
    end process;
@@ -2393,6 +2397,10 @@ begin
 							X"00"													when "001"&X"7", -- set rx read lower byte
 							X"00"													when "001"&X"8", -- set rx read upper byte
 							rx_packet_rd_data2								when "001"&X"9",
+							cloud_ip_addr(7 downto 0)						when "001"&X"A",
+							cloud_ip_addr(15 downto 8)						when "001"&X"B",
+							cloud_ip_addr(23 downto 16)					when "001"&X"C",
+							cloud_ip_addr(31 downto 24)					when "001"&X"D",
 							X"00"													when "010"&X"0", -- set checksum length lsb
 							X"00"													when "010"&X"1", -- set checksum length msb
 							X"00"													when "010"&X"2", -- set checksum start addr lsb
@@ -2653,7 +2661,6 @@ begin
 
 ------------------- PACKET DEFINITION ------------------------
 
-	--Packet_Definition_Mod : Packet_Definition_LX9
 	Packet_Definition_Mod : Packet_Definition
 	  Port Map (
 		 clka 	=> CLK_IN,
@@ -2739,6 +2746,22 @@ begin
 				 ADDR_B_IN 		=> slv(tcp_rx_data_rd_addr),
 				 DATA_B_IN 		=> X"00",
 				 DATA_B_OUT 	=> tcp_rx_data_rd_data);
+
+	--- Network Stats ---
+	
+	process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			if clk_1hz = '1' then
+				rx_kbytes_sec <= rx_bytes_counter(21 downto 10);
+			end if;
+			if clk_1hz = '1' then
+				rx_bytes_counter <= (others => '0');
+			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
+				rx_bytes_counter <= rx_bytes_counter + RESIZE(total_packet_length, 22);
+			end if;
+		end if;
+	end process;
 
 	--- DATA I/O ---
 	
