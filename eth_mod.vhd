@@ -164,7 +164,6 @@ constant C_dhcp_magic_cookie		: std_logic_vector(31 downto 0) := X"63825363";
 constant C_tcp_syn_flags			: std_logic_vector(7 downto 0) := X"02";
 constant C_tcp_ack_flags			: std_logic_vector(7 downto 0) := X"10";
 
-constant C_phy_rd_delay_count 	: std_logic_vector(8 downto 0) := "1"&X"F4";
 constant C_ICMP_Ping_Length 		: std_logic_vector(15 downto 0) := X"0054";
 constant C_ARP_Request 				: std_logic_vector(7 downto 0) := X"01";
 constant C_ARP_Reply			 		: std_logic_vector(7 downto 0) := X"02";
@@ -185,10 +184,6 @@ signal network_interface_enabled : std_logic := '0';
 signal command_cmplt, command_trig, command_en_in_p 	: std_logic := '0';
 signal init_cmnd_addr 	: unsigned(7 downto 0);
 
-signal enc28j60_version 			: std_logic_vector(7 downto 0) := (others => '0');
-signal phy_rd_counter 				: unsigned(8 downto 0) := unsigned(C_phy_rd_delay_count);
-signal phy_reg_lwr, phy_reg_upr	: std_logic_vector(7 downto 0) := (others => '0');
-signal phy_rd_addr 					: std_logic_vector(7 downto 0) := (others => '0');
 signal interrupt_counter 			: unsigned(7 downto 0) := (others => '0');
 signal next_packet_pointer			: std_logic_vector(15 downto 0) := (others => '0');
 signal previous_packet_pointer	: unsigned(15 downto 0) := (others => '0');
@@ -303,27 +298,6 @@ type ETH_ST is (	IDLE,
 						TRIGGER_CANCEL_DHCP_CONNECT,
 						TRIGGER_CLOSE_TCP_CONNECTION,
 						TRIGGER_CANCEL_TCP_CONNECTION,
-						READ_VERSION0,
-						READ_VERSION1,
-						READ_VERSION2,
-						READ_VERSION3,
-						READ_VERSION4,
-						READ_PHY_STAT,
-						READ_DUPLEX_MODE,
-						READ_PHY_REG0,
-						READ_PHY_REG1,
-						READ_PHY_REG2,
-						READ_PHY_REG3,
-						READ_PHY_REG4,
-						READ_PHY_REG5,
-						READ_PHY_REG6,
-						READ_PHY_REG7,
-						READ_PHY_REG8,
-						READ_PHY_REG9,
-						READ_PHY_REG10,
-						READ_PHY_REG11,
-						READ_PHY_REG12,
-						READ_PHY_REG13,
 						HANDLE_INIT_CMND0,
 						HANDLE_INIT_CMND1,
 						HANDLE_INIT_CMND2,
@@ -587,8 +561,6 @@ begin
 	--DEBUG_OUT <= dhcp_option & dhcp_option_length;
 	--DEBUG_OUT(7 downto 0) <= slv(init_cmnd_addr);
 	--DEBUG_OUT(7 downto 0) <= slv(state_debug_sig);
-	--DEBUG_OUT(7 downto 0) <= enc28j60_version;
-	--DEBUG_OUT(7 downto 0) <= phy_reg_upr;
 	--DEBUG_OUT(7 downto 0) <= slv(interrupt_counter);
 	--DEBUG_OUT(7 downto 0) <= slv(eir_register);
 	--DEBUG_OUT <= spi_wr_addr & spi_wr_data;
@@ -670,7 +642,7 @@ begin
    end process;
 
 	NEXT_STATE_DECODE: process (eth_state, command, command_waiting, init_cmnd_addr, poll_interrupt_reg,
-											phy_rd_counter, frame_data, tx_packet_ready_from_transmission, spi_oper_cmplt, 
+											frame_data, tx_packet_ready_from_transmission, spi_oper_cmplt, 
 												eir_register, previous_packet_pointer, next_packet_pointer, rx_packet_handled, 
 													tx_packet_length_counter, int_waiting, spi_rd_cmplt, spi_wr_cmplt)
    begin
@@ -685,13 +657,7 @@ begin
 					eth_next_state <= SERVICE_INTERRUPT0;
 				end if;
 			when PARSE_COMMAND =>
-				if command = X"0" then
-					eth_next_state <= READ_PHY_STAT;
-				elsif command = X"1" then
-					eth_next_state <= READ_DUPLEX_MODE;
-				elsif command = X"2" then
-					eth_next_state <= READ_VERSION0;
-				elsif command = X"3" then
+				if command = X"3" then
 					eth_next_state <= HANDLE_INIT_CMND0;
 				elsif command = X"4" then
 					eth_next_state <= TRIGGER_DHCP_DISCOVER;
@@ -749,66 +715,6 @@ begin
 			when TRIGGER_CANCEL_TCP_CONNECTION =>
 				eth_next_state <= IDLE;
 			
-			when READ_VERSION0 =>
-				eth_next_state <= READ_VERSION1;
-			when READ_VERSION1 =>
-				if spi_oper_cmplt = '1' then
-					eth_next_state <= READ_VERSION2;
-				end if;
-			when READ_VERSION2 =>
-				eth_next_state <= READ_VERSION3;
-			when READ_VERSION3 =>
-				if spi_oper_cmplt = '1' then
-					eth_next_state <= READ_VERSION4;
-				end if;
-			when READ_VERSION4 =>
-				eth_next_state <= IDLE;
-			when READ_PHY_STAT =>
-				eth_next_state <= READ_PHY_REG0;
-			when READ_DUPLEX_MODE =>
-				eth_next_state <= READ_PHY_REG0;
-			when READ_PHY_REG0 =>
-				eth_next_state <= READ_PHY_REG1;
-			when READ_PHY_REG1 =>
-				if spi_oper_cmplt = '1' then
-					eth_next_state <= READ_PHY_REG2;
-				end if;
-			when READ_PHY_REG2 =>
-				eth_next_state <= READ_PHY_REG3;
-			when READ_PHY_REG3 =>
-				if spi_oper_cmplt = '1' then
-					eth_next_state <= READ_PHY_REG4;
-				end if;
-			when READ_PHY_REG4 =>
-				eth_next_state <= READ_PHY_REG5;
-			when READ_PHY_REG5 =>
-				if spi_oper_cmplt = '1' then
-					eth_next_state <= READ_PHY_REG6;
-				end if;
-			when READ_PHY_REG6 =>
-				if phy_rd_counter = "000000000" then
-					eth_next_state <= READ_PHY_REG7;
-				end if;
-			when READ_PHY_REG7 =>
-				eth_next_state <= READ_PHY_REG8;
-			when READ_PHY_REG8 =>
-				if spi_oper_cmplt = '1' then
-					eth_next_state <= READ_PHY_REG9;
-				end if;
-			when READ_PHY_REG9 =>
-				eth_next_state <= READ_PHY_REG10;
-			when READ_PHY_REG10 =>
-				if spi_oper_cmplt = '1' then
-					eth_next_state <= READ_PHY_REG11;
-				end if;
-			when READ_PHY_REG11 =>
-				eth_next_state <= READ_PHY_REG12;
-			when READ_PHY_REG12 =>
-				if spi_oper_cmplt = '1' then
-					eth_next_state <= READ_PHY_REG13;
-				end if;
-			when READ_PHY_REG13 =>
-				eth_next_state <= IDLE;
 			when SERVICE_INTERRUPT0 =>
 				eth_next_state <= SERVICE_INTERRUPT1;
 			when SERVICE_INTERRUPT1 =>
@@ -1054,8 +960,6 @@ begin
       if rising_edge(CLK_IN) then
 			if eth_state = HANDLE_INIT_CMND0 then
 				slow_cs_en <= '1';
-			elsif eth_state = READ_PHY_REG0 then
-				slow_cs_en <= '1';
 			elsif eth_state = IDLE then
 				slow_cs_en <= '0';
 			end if;
@@ -1098,16 +1002,6 @@ begin
       if rising_edge(CLK_IN) then
 			if eth_state = HANDLE_INIT_CMND3 then
 				spi_we <= '1';
-			elsif eth_state = READ_VERSION0 then
-				spi_we <= '1';
-			elsif eth_state = READ_PHY_REG0 then
-				spi_we <= '1';
-			elsif eth_state = READ_PHY_REG2 then
-				spi_we <= '1';
-			elsif eth_state = READ_PHY_REG4 then
-				spi_we <= '1';
-			elsif eth_state = READ_PHY_REG7 then
-				spi_we <= '1';
 			elsif eth_state = SERVICE_INTERRUPT0 then
 				spi_we <= '1';
 			elsif eth_state = SERVICE_INTERRUPT6 then
@@ -1148,32 +1042,11 @@ begin
       end if;
    end process;
 	
-	PHY_ADDR_PROC: process(CLK_IN)
-   begin
-      if rising_edge(CLK_IN) then
-			if eth_state = READ_PHY_STAT then
-				phy_rd_addr <= X"01";
-			elsif eth_state = READ_DUPLEX_MODE then
-				phy_rd_addr <= X"00";
-			end if;
-		end if;
-	end process;
-	
 	SPI_ADDR_PROC: process(CLK_IN)
    begin
       if rising_edge(CLK_IN) then
 			if eth_state = HANDLE_INIT_CMND3 then
 				spi_wr_addr <= frame_data(15 downto 8);
-			elsif eth_state = READ_VERSION0 then
-				spi_wr_addr <= X"5F";
-			elsif eth_state = READ_PHY_REG0 then
-				spi_wr_addr <= X"5F";
-			elsif eth_state = READ_PHY_REG2 then
-				spi_wr_addr <= X"54";
-			elsif eth_state = READ_PHY_REG4 then
-				spi_wr_addr <= X"52";
-			elsif eth_state = READ_PHY_REG7 then
-				spi_wr_addr <= X"52";
 			elsif eth_state = SERVICE_INTERRUPT0 then
 				spi_wr_addr <= X"BB";
 			elsif eth_state = HANDLE_TX_INTERRUPT0 then
@@ -1217,16 +1090,6 @@ begin
       if rising_edge(CLK_IN) then
 			if eth_state = HANDLE_INIT_CMND3 then
 				spi_wr_data <= frame_data(7 downto 0);
-			elsif eth_state = READ_VERSION0 then
-				spi_wr_data <= X"03";
-			elsif eth_state = READ_PHY_REG0 then
-				spi_wr_data <= X"02";
-			elsif eth_state = READ_PHY_REG2 then
-				spi_wr_data <= phy_rd_addr;
-			elsif eth_state = READ_PHY_REG4 then
-				spi_wr_data <= X"01";
-			elsif eth_state = READ_PHY_REG7 then
-				spi_wr_data <= X"00";
 			elsif eth_state = SERVICE_INTERRUPT0 then
 				spi_wr_data <= X"80";
 			elsif eth_state = HANDLE_TX_INTERRUPT0 then
@@ -1281,13 +1144,7 @@ begin
 	SPI_RD_ADDR_PROC: process(CLK_IN)
    begin
       if rising_edge(CLK_IN) then
-			if eth_state = READ_VERSION2 then
-				spi_rd_addr <= X"12";
-			elsif eth_state = READ_PHY_REG9 then
-				spi_rd_addr <= X"18";
-			elsif eth_state = READ_PHY_REG11 then
-				spi_rd_addr <= X"19";
-			elsif eth_state = SERVICE_INTERRUPT2 then
+			if eth_state = SERVICE_INTERRUPT2 then
 				spi_rd_addr <= X"1C";
 			elsif eth_state = HANDLE_RX_INTERRUPT0 then
 				spi_rd_addr <= X"3A";
@@ -1302,13 +1159,7 @@ begin
 	SPI_RD_FLAG_PROC: process(CLK_IN)
    begin
       if rising_edge(CLK_IN) then
-			if eth_state = READ_VERSION2 then
-				spi_rd <= '1';
-			elsif eth_state = READ_PHY_REG9 then
-				spi_rd <= '1';
-			elsif eth_state = READ_PHY_REG11 then
-				spi_rd <= '1';
-			elsif eth_state = SERVICE_INTERRUPT2 then
+			if eth_state = SERVICE_INTERRUPT2 then
 				spi_rd <= '1';
 			elsif eth_state = HANDLE_RX_INTERRUPT0 then
 				spi_rd <= '1';
@@ -1336,9 +1187,6 @@ begin
 	ENC_VERSION_PROC: process(CLK_IN)
    begin
       if rising_edge(CLK_IN) then
-			if eth_state = READ_VERSION4 then
-				enc28j60_version <= spi_data_rd;
-			end if;
 			if eth_state = SERVICE_INTERRUPT4 then
 				eir_register <= spi_data_rd;
 			end if;
@@ -1350,34 +1198,6 @@ begin
 			end if;
       end if;
    end process;
-
-	RD_PHY_DELAY: process(CLK_IN)
-   begin
-      if rising_edge(CLK_IN) then
-			if eth_state = READ_PHY_REG6 then
-				phy_rd_counter <= phy_rd_counter - 1;
-			else
-				phy_rd_counter <= unsigned(C_phy_rd_delay_count);
-			end if;
-			if eth_state = READ_PHY_REG11 then
-				phy_reg_lwr <= spi_data_rd;
-			end if;
-			if eth_state = READ_PHY_REG13 then
-				phy_reg_upr <= spi_data_rd;
-			end if;
-		end if;
-	end process;
-	
-	RD_PHY_DUMMY_BYTE: process(CLK_IN)
-   begin
-      if rising_edge(CLK_IN) then
-			if eth_state = READ_PHY_REG10 then
-				spi_rd_width <= '1';
-			else
-				spi_rd_width <= '0';
-			end if;
-		end if;
-	end process;
 
 	COMMAND_PROC: process(CLK_IN)
    begin
