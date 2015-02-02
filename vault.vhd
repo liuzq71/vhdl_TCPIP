@@ -193,6 +193,9 @@ signal eth_command_en, eth_command_cmplt : std_logic;
 	
 signal sdi_buf, sdo_buf, sclk_buf, sclk_buf_n, sclk_oddr, cs_buf : std_logic;
 
+signal clk_div_counter : unsigned(7 downto 0);
+signal tcp_rd_en : std_logic;
+
 begin
 	
 	clk_mod_Inst : clk_mod
@@ -202,12 +205,12 @@ begin
 	
 --------------------------- DEBUG LOGIC ------------------------------
 	
-	LED_OUT(7 downto 4) <= (others => '0');
+	LED_OUT(7 downto 3) <= (others => '0');
 	
 	SD_MISO 	<= '0';
-	SD_MOSI 	<= '0';
+	SD_MOSI 	<= sseg_data(2);
 	SD_CLK 	<= '0';
-	SD_CS 	<= '0';
+	SD_CS 	<= sseg_data(1);
 	
 	OBUF_inst_0: OBUF generic map ( DRIVE => 12, IOSTANDARD => "DEFAULT", SLEW => "FAST") port map (I => sdi_buf, O => SDO);
 	IBUF_inst_0: IBUF port map (I => SDI, O => sdo_buf);
@@ -343,7 +346,7 @@ begin
 
 					  COMMAND_IN			=> eth_command,
 					  COMMAND_EN_IN		=> eth_command_en,
-					  COMMAND_CMPLT_OUT 	=> LED_OUT(3),
+					  COMMAND_CMPLT_OUT 	=> LED_OUT(2),
 					  ERROR_OUT 			=> eth_command_err,
 					  
 					  -- Data Interface
@@ -354,8 +357,8 @@ begin
 					  DEBUG_OUT	=> sseg_data,
 					  
 					  -- TCP Connection Interface
-					  TCP_RD_DATA_AVAIL_OUT => LED_OUT(2),
-					  TCP_RD_DATA_EN_IN 		=> buttons(0),
+					  TCP_RD_DATA_AVAIL_OUT => open,
+					  TCP_RD_DATA_EN_IN 		=> tcp_rd_en,
 					  TCP_RD_DATA_OUT 		=> open,
 					  
 					  CLK_1HZ_IN	=> clk_1hz,
@@ -366,6 +369,23 @@ begin
 					  SCLK_OUT 	=> sclk_buf,
 					  CS_OUT 	=> cs_buf,
 					  INT_IN 	=> INT);
+					  
+	process(clk_25MHz)
+	begin
+		if rising_edge(clk_25MHz) then
+			if clk_div_counter = X"00" then
+				clk_div_counter <= unsigned(SW_IN);
+			else
+				clk_div_counter <= clk_div_counter - 1;
+			end if;
+			if clk_div_counter = X"00" then
+				tcp_rd_en <= '1';
+			else
+				tcp_rd_en <= '0';
+			end if;
+		end if;
+	end process;
+							
 
 end Behavioral;
 
