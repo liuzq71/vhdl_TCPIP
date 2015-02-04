@@ -120,6 +120,11 @@
     <file xil_pn:name="ipcore_dir/FONT_MEM.vhd" xil_pn:type="FILE_VHDL">
       <association xil_pn:name="Implementation" xil_pn:seqID="7"/>
     </file>
+    <file xil_pn:name="coe_dir/ascii_space.coe" xil_pn:type="FILE_USERDOC"/>
+    <file xil_pn:name="coe_dir/keycode_ascii_translate.coe" xil_pn:type="FILE_USERDOC"/>
+    <file xil_pn:name="coe_dir/lat0-12.coe" xil_pn:type="FILE_USERDOC"/>
+    <file xil_pn:name="coe_dir/packet_definition.coe" xil_pn:type="FILE_USERDOC"/>
+    <file xil_pn:name="coe_dir/screen_msg.coe" xil_pn:type="FILE_USERDOC"/>
     <file xil_pn:name="ipcore_dir/Packet_Definition.xise" xil_pn:type="FILE_COREGENISE">
       <association xil_pn:name="Implementation" xil_pn:seqID="0"/>
     </file>

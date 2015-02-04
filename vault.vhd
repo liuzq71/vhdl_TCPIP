@@ -143,7 +143,7 @@ architecture Behavioral of vault is
 			  ADDR_IN	: in  STD_LOGIC_VECTOR (7 downto 0);
 			  DATA_OUT	: out  STD_LOGIC_VECTOR (7 downto 0);
 			  
-			  DEBUG_IN 	: in STD_LOGIC;
+			  DEBUG_IN 	: in STD_LOGIC_VECTOR (2 downto 0);
 			  DEBUG_OUT	: out  STD_LOGIC_VECTOR (15 downto 0);
 			  
            -- TCP Connection Interface
@@ -353,7 +353,7 @@ begin
 					  ADDR_IN 	=> addr_bus,
 					  DATA_OUT 	=> data_bus,
 					  
-					  DEBUG_IN	=> buttons(0),
+					  DEBUG_IN	=> buttons(2 downto 0),
 					  DEBUG_OUT	=> sseg_data,
 					  
 					  -- TCP Connection Interface
