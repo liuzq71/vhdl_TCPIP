@@ -1,7 +1,7 @@
 ##############################################################
 #
 # Xilinx Core Generator version 14.2
-# Date: Thu Jan 15 11:56:48 2015
+# Date: Thu Mar  5 00:53:29 2015
 #
 ##############################################################
 #
@@ -22,16 +22,16 @@ SET asysymbol = true
 SET busformat = BusFormatAngleBracketNotRipped
 SET createndf = false
 SET designentry = VHDL
-SET device = xc3s500e
-SET devicefamily = spartan3e
+SET device = xc6slx9
+SET devicefamily = spartan6
 SET flowvendor = Other
 SET formalverification = false
 SET foundationsym = false
 SET implementationfiletype = Ngc
-SET package = fg320
+SET package = csg324
 SET removerpms = false
 SET simulationfiles = Behavioral
-SET speedgrade = -5
+SET speedgrade = -3
 SET verilogsim = false
 SET vhdlsim = true
 # END Project Options
@@ -46,9 +46,9 @@ CSET axi_id_width=4
 CSET axi_slave_type=Memory_Slave
 CSET axi_type=AXI4_Full
 CSET byte_size=9
-CSET coe_file=/home/craig/Documents/CW/Git_Repos/display/coe_dir/lat0-12.coe
+CSET coe_file=/home/craig/Documents/CW/Git_Repos/vault_numato/coe_dir/lat0-12.coe
 CSET collision_warnings=ALL
-CSET component_name=FONT_MEM
+CSET component_name=Font_Mem
 CSET disable_collision_warnings=false
 CSET disable_out_of_range_warnings=false
 CSET ecc=false
@@ -69,9 +69,9 @@ CSET pipeline_stages=0
 CSET port_a_clock=100
 CSET port_a_enable_rate=100
 CSET port_a_write_rate=50
-CSET port_b_clock=0
-CSET port_b_enable_rate=0
-CSET port_b_write_rate=0
+CSET port_b_clock=100
+CSET port_b_enable_rate=100
+CSET port_b_write_rate=50
 CSET primitive=8kx2
 CSET read_width_a=8
 CSET read_width_b=8
@@ -103,4 +103,4 @@ CSET write_width_b=8
 MISC pkg_timestamp=2012-06-25T21:54:09Z
 # END Extra information
 GENERATE
-# CRC: ef4d4ef4
+# CRC: 826441b4

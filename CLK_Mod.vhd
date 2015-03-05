@@ -54,8 +54,8 @@ begin
 
 	DCM_SP_inst : DCM_SP
    generic map (
-      CLKDV_DIVIDE => 2.0,                   -- CLKDV divide value (1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,9,10,11,12,13,14,15,16).
-      CLKFX_DIVIDE => 1,                     -- Divide value on CLKFX outputs - D - (1-32)
+      CLKDV_DIVIDE => 4.0,                   -- CLKDV divide value (1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,9,10,11,12,13,14,15,16).
+      CLKFX_DIVIDE => 4,                     -- Divide value on CLKFX outputs - D - (1-32)
       CLKFX_MULTIPLY => 2,                   -- Multiply value on CLKFX outputs - M - (2-32)
       CLKIN_DIVIDE_BY_2 => FALSE,            -- CLKIN divide by two (TRUE/FALSE)
       CLKIN_PERIOD => 20.0,                  -- Input clock period specified in nS
@@ -74,13 +74,13 @@ begin
       CLK2X180 => open, 				-- 1-bit output: 2X clock frequency, 180 degree clock output
       CLK90 	=> open,       		-- 1-bit output: 90 degree clock output
       CLKDV 	=> clk0_div2out,     -- 1-bit output: Divided clock output
-      CLKFX 	=> open,       		-- 1-bit output: Digital Frequency Synthesizer output (DFS)
+      CLKFX 	=> clk0_1xout_tmp,   -- 1-bit output: Digital Frequency Synthesizer output (DFS)
       CLKFX180 => open, 				-- 1-bit output: 180 degree CLKFX output
       LOCKED 	=> open,     			-- 1-bit output: DCM_SP Lock Output
       PSDONE 	=> open,     			-- 1-bit output: Phase shift done output
       STATUS 	=> open,     			-- 8-bit output: DCM_SP status output
       CLKFB 	=> clk0_2xout_bufg,  -- 1-bit input: Cl DONE until DCM_SP LOCKED (TRUE/FALSE)
-      CLK0 		=> clk0_1xout_tmp,	-- 1-bit output: 0 degree clock output
+      CLK0 		=> open, 				-- 1-bit output: 0 degree clock output
       CLK180 	=> open,     			-- 1-bit output: 180 degree clock output
       CLK270 	=> open,     			-- 1-bit output: 270 degree clock output
       CLK2X 	=> clk0_2xout_tmp,   -- 1-bit output: 2X clock feedback input

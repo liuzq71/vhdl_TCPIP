@@ -51,6 +51,7 @@ type CC_ST is (	IDLE,
 						LOAD_VALUE_LSB,
 						ADD_VALUE,
 						CHECK_COUNT,
+						CHECK_REMAINDER,
 						ADD_REMAINDER,
 						ONES_COMPLEMENT,
 						COMPLETE
@@ -59,14 +60,14 @@ type CC_ST is (	IDLE,
 signal cc_state, cc_next_state : CC_ST := IDLE;
 
 signal rd_addr 								: unsigned(10 downto 0);
-signal value 									: unsigned(15 downto 0);
-signal checksum_reg, checksum_reg_inv 	: unsigned(24 downto 0);
+signal value, checksum_reg_inv			: unsigned(15 downto 0);
+signal checksum_reg							: unsigned(31 downto 0);
 signal count 									: unsigned(10 downto 0);
 
 begin
 
 	VALUE_ADDR_OUT <= std_logic_vector(rd_addr);
-	CHECKSUM_OUT <= std_logic_vector(checksum_reg_inv(15 downto 0));
+	CHECKSUM_OUT <= std_logic_vector(checksum_reg_inv);
 	CHECKSUM_DONE_OUT <= '1' when cc_state = COMPLETE else '0';
 
 	SYNC_PROC: process(CLK_IN)
@@ -104,13 +105,21 @@ begin
 				cc_next_state <= CHECK_COUNT;
 			when CHECK_COUNT =>
 				if count = "00000000000" then
-					cc_next_state <= ADD_REMAINDER;
+					cc_next_state <= CHECK_REMAINDER;
 				else
 					cc_next_state <= INC_ADDR0;
 				end if;
-			
+				
+			when CHECK_REMAINDER =>
+				if checksum_reg(31 downto 16) = X"0000" then
+					cc_next_state <= ONES_COMPLEMENT;
+				else
+					cc_next_state <= ADD_REMAINDER;
+				end if;
 			when ADD_REMAINDER =>
-				cc_next_state <= ONES_COMPLEMENT;
+				cc_next_state <= CHECK_REMAINDER;
+				
+				
 			when ONES_COMPLEMENT =>
 				cc_next_state <= COMPLETE;
 			
@@ -152,14 +161,14 @@ begin
 				checksum_reg <= (others => '0');
 			elsif cc_state = SET_INITIAL_VALUE0 then
 				checksum_reg(15 downto 0) <= unsigned(CHECKSUM_INIT_IN);
-				checksum_reg(24 downto 16) <= (others => '0');
+				checksum_reg(31 downto 16) <= (others => '0');
 			elsif cc_state = ADD_VALUE then
-				checksum_reg <= checksum_reg + unsigned(X"00" & value);
+				checksum_reg <= checksum_reg + unsigned(X"0000" & value);
 			elsif cc_state = ADD_REMAINDER then
-				checksum_reg <= checksum_reg + unsigned(X"0000" & checksum_reg(24 downto 16));
+				checksum_reg <= unsigned(X"0000" & checksum_reg(15 downto 0)) + unsigned(X"0000" & checksum_reg(31 downto 16));
 			end if;
 			if cc_state = ONES_COMPLEMENT then
-				checksum_reg_inv <= not(checksum_reg);
+				checksum_reg_inv <= not(checksum_reg(15 downto 0));
 			end if;
 		end if;
 	end process;

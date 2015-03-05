@@ -297,6 +297,7 @@ signal rx_kbytes_sec, tx_kbytes_sec : unsigned(11 downto 0);
 signal rx_bytes_counter, tx_bytes_counter : unsigned(21 downto 0);
 
 signal ack_countdown : unsigned(15 downto 0);
+signal num_packets : std_logic_vector(7 downto 0) := (others => '0');
 
 type ETH_ST is (	IDLE,
 						PARSE_COMMAND,
@@ -372,7 +373,14 @@ type ETH_ST is (	IDLE,
 						HANDLE_TX_TRANSMIT15,
 						HANDLE_TX_TRANSMIT16,
 						HANDLE_TX_TRANSMIT17,
-						HANDLE_TX_TRANSMIT_PRE11);
+						HANDLE_TX_TRANSMIT_PRE11,
+						GET_NUM_PACKETS0,
+						GET_NUM_PACKETS1,
+						GET_NUM_PACKETS2,
+						GET_NUM_PACKETS3,
+						GET_NUM_PACKETS4,
+						GET_NUM_PACKETS5,
+						GET_NUM_PACKETS6);
 
 signal eth_state, eth_next_state : ETH_ST := IDLE;
 signal state_debug_sig : unsigned(7 downto 0);
@@ -518,6 +526,7 @@ type PACKET_HANDLER_ST is (	IDLE,
 										TRIGGER_TCP_ACK2,
 										TRIGGER_TCP_ACK3,
 										--SEND_PREVIOUS_ACK0,
+										SEQ_ACK_NUM_FAILURE,
 										COMPLETE
 									);
 										
@@ -575,7 +584,6 @@ begin
 	--DEBUG_OUT <= dhcp_option & dhcp_option_length;
 	--DEBUG_OUT(7 downto 0) <= slv(init_cmnd_addr);
 	--DEBUG_OUT(7 downto 0) <= slv(state_debug_sig);
-	--DEBUG_OUT(7 downto 0) <= slv(interrupt_counter);
 	--DEBUG_OUT(7 downto 0) <= slv(eir_register);
 	--DEBUG_OUT <= spi_wr_addr & spi_wr_data;
 	--DEBUG_OUT <= next_packet_pointer;
@@ -584,7 +592,7 @@ begin
 	--DEBUG_OUT <= arp_target_ip_addr(15 downto 0) when DEBUG_IN = '0' else arp_target_ip_addr(31 downto 16);
 	--DEBUG_OUT <= arp_source_ip_addr(15 downto 0) when DEBUG_IN = '0' else arp_source_ip_addr(31 downto 16);
 	--DEBUG_OUT <= dhcp_your_ip_addr(15 downto 0) when DEBUG_IN = '0' else dhcp_your_ip_addr(31 downto 16);
-	--DEBUG_OUT <= slv(tcp_acknowledge_number(15 downto 0)) when DEBUG_IN = '0' else slv(tcp_acknowledge_number(31 downto 16));
+	--DEBUG_OUT <= slv(tcp_acknowledge_number(15 downto 0)) when DEBUG_IN(1) = '0' else slv(tcp_acknowledge_number(31 downto 16));
 	--DEBUG_OUT <= slv(tcp_ack_number_previous_ack(15 downto 0)) when DEBUG_IN = '0' else slv(tcp_ack_number_previous_ack(31 downto 16));
 	--DEBUG_OUT(11 downto 0) <= slv(requested_data_size);
 	--DEBUG_OUT(7 downto 0) <= tx_packet_rd_data;
@@ -592,9 +600,10 @@ begin
 	--DEBUG_OUT <= slv(tx_packet_end_pointer);
 	--DEBUG_OUT(3 downto 0) <= ip_packet_version;
 	--DEBUG_OUT(7 downto 0) <= X"0"&"0"&debug_rx_flag2&debug_rx_flag1&debug_rx_flag;
-	--DEBUG_OUT(7 downto 0) <= slv(state_debug_sig);
+	--DEBUG_OUT(7 downto 0) <= slv(num_packets);
 	--DEBUG_OUT(11 downto 0) <= slv(rx_kbytes_sec);
-	DEBUG_OUT(15 downto 0) <= slv(interrupt_counter); -- when DEBUG_IN = '0' else ip_packet_length_debug;
+	--DEBUG_OUT(15 downto 0) <= slv(interrupt_counter);
+	--DEBUG_OUT(15 downto 0) <= slv(checksum);
 	
 --	with DEBUG_IN select
 --		DEBUG_OUT <= 	slv(tcp_acknowledge_number(15 downto 0)) when "000",
@@ -606,15 +615,15 @@ begin
 --							slv(tcp_ack_number_previous_ack5(15 downto 0)) when "110",
 --							slv(tcp_ack_number_previous_ack6(15 downto 0)) when others;
 
---	with DEBUG_IN select
---		DEBUG_OUT <= 	slv(rx_data_length(15 downto 0)) when "000",
---							slv(prev_rx_data_length(15 downto 0)) when "001",
---							slv(prev_rx_data_length1(15 downto 0)) when "010",
---							slv(prev_rx_data_length2(15 downto 0)) when "011",
---							slv(prev_rx_data_length3(15 downto 0)) when "100",
---							slv(prev_rx_data_length4(15 downto 0)) when "101",
---							slv(prev_rx_data_length5(15 downto 0)) when "110",
---							slv(prev_rx_data_length6(15 downto 0)) when others;
+	with DEBUG_IN select
+		DEBUG_OUT <= 	slv(rx_data_length(15 downto 0)) when "000",
+							slv(prev_rx_data_length(15 downto 0)) when "001",
+							slv(prev_rx_data_length1(15 downto 0)) when "010",
+							slv(prev_rx_data_length2(15 downto 0)) when "011",
+							slv(prev_rx_data_length3(15 downto 0)) when "100",
+							slv(prev_rx_data_length4(15 downto 0)) when "101",
+							slv(prev_rx_data_length5(15 downto 0)) when "110",
+							slv(prev_rx_data_length6(15 downto 0)) when others;
 	
 --	debug_rx_flag1 <= '1' when eth_state = COPY_RX_PACKET_TO_BUF4 else '0';
 --	debug_rx_flag2 <= '1' when eth_state = COPY_RX_PACKET_TO_BUF5 else '0';
@@ -656,7 +665,13 @@ begin
 	INT_PROC: process(CLK_IN)
    begin
       if rising_edge(CLK_IN) then
-			if packet_handler_state = CHECK_TCP_PSH_ACK_PACKET3 then -- TODO DEBUG
+--			if packet_handler_state = CHECK_TCP_PSH_ACK_PACKET3 then -- TODO DEBUG
+--				interrupt_counter <= interrupt_counter + 1;
+--			end if;
+--			if eth_state = SERVICE_INTERRUPT5 and eir_register(6) = '1' then -- TODO DEBUG
+--				interrupt_counter <= interrupt_counter + 1;
+--			end if;
+			if packet_handler_state = SEQ_ACK_NUM_FAILURE then
 				interrupt_counter <= interrupt_counter + 1;
 			end if;
 		end if;
@@ -672,7 +687,7 @@ begin
 	NEXT_STATE_DECODE: process (eth_state, command, command_waiting, init_cmnd_addr, poll_interrupt_reg,
 											frame_data, tx_packet_ready_from_transmission, spi_oper_cmplt, 
 												eir_register, previous_packet_pointer, next_packet_pointer, rx_packet_handled, 
-													tx_packet_length_counter, spi_rd_cmplt, spi_wr_cmplt)
+													tx_packet_length_counter, spi_rd_cmplt, spi_wr_cmplt, DEBUG_IN(0))
    begin
       eth_next_state <= eth_state;  --default is to stay in current state
       case (eth_state) is
@@ -681,8 +696,10 @@ begin
 					eth_next_state <= PRE_TX_TRANSMIT0;
 				elsif command_waiting = '1' then
 					eth_next_state <= PARSE_COMMAND;
+--				elsif DEBUG_IN(2) = '1' then
+--					eth_next_state <= GET_NUM_PACKETS0; -- DEBUG
 				else
-					eth_next_state <= SERVICE_INTERRUPT0; -- TODO rename to 'check if packet available'
+					eth_next_state <= SERVICE_INTERRUPT0;
 				end if;
 			when PARSE_COMMAND =>
 				if command = X"3" then
@@ -938,6 +955,28 @@ begin
 			when HANDLE_TX_TRANSMIT17 =>
 				eth_next_state <= IDLE;
 				
+			-- DEBUG
+			when GET_NUM_PACKETS0 =>
+				eth_next_state <= GET_NUM_PACKETS1;
+			when GET_NUM_PACKETS1 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= GET_NUM_PACKETS2;
+				end if;
+			when GET_NUM_PACKETS2 =>
+				eth_next_state <= GET_NUM_PACKETS3;
+			when GET_NUM_PACKETS3 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= GET_NUM_PACKETS4;
+				end if;
+			when GET_NUM_PACKETS4 =>
+				eth_next_state <= GET_NUM_PACKETS5;			
+			when GET_NUM_PACKETS5 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= GET_NUM_PACKETS6;
+				end if;
+			when GET_NUM_PACKETS6 =>
+				eth_next_state <= IDLE;
+				
 		end case;
 	end process;
 
@@ -948,6 +987,10 @@ begin
 				spi_wr_continuous <= '1';
 			elsif tx_packet_length_counter = X"0000" then
 				spi_wr_continuous <= '0';
+			end if;
+			-- DEBUG
+			if eth_state = GET_NUM_PACKETS6 then
+				num_packets <= spi_data_rd;
 			end if;
 		end if;
 	end process;
@@ -1075,6 +1118,13 @@ begin
 				spi_we <= '1';
 			elsif eth_state = HANDLE_TX_TRANSMIT15 then
 				spi_we <= '1';
+				
+			-- DEBUG
+			elsif eth_state = GET_NUM_PACKETS0 then
+				spi_we <= '1';
+			elsif eth_state = GET_NUM_PACKETS2 then
+				spi_we <= '1';
+				
 			else
 				spi_we <= '0';
 			end if;
@@ -1120,6 +1170,13 @@ begin
 				spi_wr_addr <= X"47";
 			elsif eth_state = HANDLE_TX_TRANSMIT15 then
 				spi_wr_addr <= X"9F";
+			
+			-- DEBUG
+			elsif eth_state = GET_NUM_PACKETS0 then
+				spi_wr_addr <= X"BF";
+			elsif eth_state = GET_NUM_PACKETS2 then
+				spi_wr_addr <= X"9F";
+				
 			end if;
       end if;
    end process;
@@ -1165,6 +1222,13 @@ begin
 				spi_wr_data <= slv(tx_packet_end_pointer(15 downto 8));
 			elsif eth_state = HANDLE_TX_TRANSMIT15 then
 				spi_wr_data <= X"08";
+				
+			-- DEBUG
+			elsif eth_state = GET_NUM_PACKETS0 then
+				spi_wr_data <= X"02";
+			elsif eth_state = GET_NUM_PACKETS2 then
+				spi_wr_data <= X"01";
+				
 			end if;
       end if;
    end process;
@@ -1191,6 +1255,11 @@ begin
 				spi_rd_addr <= X"3A";
 			elsif eth_state = COPY_RX_PACKET_TO_BUF1 then
 				spi_rd_addr <= X"3A";
+			
+			-- DEBUG
+			elsif eth_state = GET_NUM_PACKETS4 then
+				spi_rd_addr <= X"19";
+				
 			end if;
       end if;
    end process;
@@ -1206,6 +1275,11 @@ begin
 				spi_rd <= '1';
 			elsif eth_state = COPY_RX_PACKET_TO_BUF1 then
 				spi_rd <= '1';
+			
+			-- DEBUG
+			elsif eth_state = GET_NUM_PACKETS4 then
+				spi_rd <= '1';
+				
 			else
 				spi_rd <= '0';
 			end if;
@@ -1768,14 +1842,19 @@ begin
 				if tcp_sequence_number = unsigned(rx_tcp_ack_number) then
 					packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET1;
 				else
-					packet_handler_next_state <= COMPLETE;
+					packet_handler_next_state <= SEQ_ACK_NUM_FAILURE;
 				end if;
 			when CHECK_TCP_PSH_ACK_PACKET1 =>
 				if tcp_acknowledge_number = unsigned(rx_tcp_seq_number) then
 					packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET2;
 				else
-					packet_handler_next_state <= COMPLETE; --SEND_PREVIOUS_ACK0;	-- Retransmission due to ACK loss, resend previous ACK
+					packet_handler_next_state <= SEQ_ACK_NUM_FAILURE; --SEND_PREVIOUS_ACK0;	-- Retransmission due to ACK loss, resend previous ACK
 				end if;
+				
+			-- DEBUG
+			when SEQ_ACK_NUM_FAILURE =>
+				packet_handler_next_state <= COMPLETE;
+				
 			when CHECK_TCP_PSH_ACK_PACKET2 =>
 				packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET3;
 			when CHECK_TCP_PSH_ACK_PACKET3 =>

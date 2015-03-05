@@ -31,9 +31,9 @@ entity vault is
 				TX_OUT 		: out  STD_LOGIC;
 				LED_OUT 		: out STD_LOGIC_VECTOR (7 downto 0);
 				SSEG_OUT 	: out STD_LOGIC_VECTOR (7 downto 0);
-				AN_OUT 		: out STD_LOGIC_VECTOR (3 downto 0);
+				SSEG_EN_OUT : out STD_LOGIC_VECTOR (3 downto 0);
 				SW_IN 		: in STD_LOGIC_VECTOR (7 downto 0);
-				BUTTON_IN 	: in STD_LOGIC_VECTOR (3 downto 0);
+				BUTTON_IN 	: in STD_LOGIC_VECTOR (5 downto 0);
 
 				vgaRed		: out STD_LOGIC_VECTOR (2 downto 0);
 				vgaGreen		: out STD_LOGIC_VECTOR (2 downto 0);
@@ -171,6 +171,7 @@ signal char_addr, font_addr	: std_logic_vector(11 downto 0);
 signal char_data, font_data	: std_logic_vector(7 downto 0);
 signal debug_addr	: std_logic_vector(11 downto 0);
 signal debug_data	: std_logic_vector(7 downto 0);
+signal debug_i		: std_logic_vector(2 downto 0);
 signal r, g, b 					: std_logic := '0';
 signal octl							: std_logic_vector(7 downto 0);
 signal ocrx, ocry 				: std_logic_vector(7 downto 0) := (others => '0');
@@ -205,12 +206,14 @@ begin
 	
 --------------------------- DEBUG LOGIC ------------------------------
 	
-	LED_OUT(7 downto 3) <= (others => '0');
+	LED_OUT(4 downto 3) <= (others => '0');
+	--LED_OUT(7 downto 4) <= sseg_data(15 downto 12);
+	LED_OUT(7 downto 5) <= debug_i;
 	
 	SD_MISO 	<= '0';
-	SD_MOSI 	<= sseg_data(2);
+	SD_MOSI 	<= '0';
 	SD_CLK 	<= '0';
-	SD_CS 	<= sseg_data(1);
+	SD_CS 	<= '0';
 	
 	OBUF_inst_0: OBUF generic map ( DRIVE => 12, IOSTANDARD => "DEFAULT", SLEW => "FAST") port map (I => sdi_buf, O => SDO);
 	IBUF_inst_0: IBUF port map (I => SDI, O => sdo_buf);
@@ -231,13 +234,12 @@ begin
       S => '0'     		-- 1-bit set input
    );
 
-	
 	sseg_inst : sseg
 	PORT MAP (	
 		CLK    	=> clk_25MHz,
 		VAL_IN 	=> sseg_data,
 		SSEG_OUT	=> SSEG_OUT,
-		AN_OUT   => AN_OUT);
+		AN_OUT   => SSEG_EN_OUT);
 	
 	process(clk_25MHz)
 	begin
@@ -245,7 +247,7 @@ begin
 			debounce_count <= debounce_count + 1;
 			buttons_prev <= buttons;
 			if debounce_count = X"0000" then
-				buttons <= BUTTON_IN;
+				buttons <= BUTTON_IN(3 downto 0);
 			end if;
 			if buttons_prev(0) = '0' and buttons(0) = '1' then
 				buttons_edge(0) <= '1';
@@ -335,6 +337,8 @@ begin
 ------------------------- Ethernet I/O --------------------------------
 
 	RESET <= '0';
+	--debug_i <= buttons_edge(2)&buttons(1)&buttons_edge(0);
+	debug_i <= buttons(2)&buttons(1)&buttons(0);
 
 	eth_mod_inst : eth_mod
 		 Port Map ( CLK_IN 	=> clk_25MHz,
@@ -353,7 +357,7 @@ begin
 					  ADDR_IN 	=> addr_bus,
 					  DATA_OUT 	=> data_bus,
 					  
-					  DEBUG_IN	=> buttons(2 downto 0),
+					  DEBUG_IN	=> debug_i,
 					  DEBUG_OUT	=> sseg_data,
 					  
 					  -- TCP Connection Interface

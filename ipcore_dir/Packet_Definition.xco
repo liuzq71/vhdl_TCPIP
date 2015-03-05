@@ -1,7 +1,7 @@
 ##############################################################
 #
 # Xilinx Core Generator version 14.2
-# Date: Sat Jan 31 06:18:59 2015
+# Date: Thu Mar  5 01:57:30 2015
 #
 ##############################################################
 #
@@ -22,16 +22,16 @@ SET asysymbol = true
 SET busformat = BusFormatAngleBracketNotRipped
 SET createndf = false
 SET designentry = VHDL
-SET device = xc3s500e
-SET devicefamily = spartan3e
+SET device = xc6slx9
+SET devicefamily = spartan6
 SET flowvendor = Other
 SET formalverification = false
 SET foundationsym = false
 SET implementationfiletype = Ngc
-SET package = fg320
+SET package = csg324
 SET removerpms = false
 SET simulationfiles = Behavioral
-SET speedgrade = -5
+SET speedgrade = -3
 SET verilogsim = false
 SET vhdlsim = true
 # END Project Options
@@ -46,7 +46,7 @@ CSET axi_id_width=4
 CSET axi_slave_type=Memory_Slave
 CSET axi_type=AXI4_Full
 CSET byte_size=9
-CSET coe_file=/home/craig/Documents/CW/Git_Repos/vault/coe_dir/packet_definition.coe
+CSET coe_file=/home/craig/Documents/CW/Git_Repos/vault_numato/coe_dir/packet_definition.coe
 CSET collision_warnings=ALL
 CSET component_name=Packet_Definition
 CSET disable_collision_warnings=false
@@ -103,4 +103,4 @@ CSET write_width_b=16
 MISC pkg_timestamp=2012-06-25T21:54:09Z
 # END Extra information
 GENERATE
-# CRC: 6f94b334
+# CRC: f563a735
