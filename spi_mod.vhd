@@ -54,7 +54,7 @@ end spi_mod;
 
 architecture Behavioral of spi_mod is
 
-constant C_clk_div 				: unsigned(7 downto 0) := X"01";
+constant C_clk_div 				: unsigned(7 downto 0) := X"02";
 constant C_spi_clk_polarity 	: std_logic := '0';
 constant C_wr_len					: unsigned(3 downto 0) := X"F";
 constant C_rd_8len				: unsigned(7 downto 0) := X"0F"; -- 8 bit addr, 8 bit data
@@ -65,7 +65,7 @@ constant C_oper_cmplt_init		: unsigned(7 downto 0) := X"00";
 
 signal clk_counter : unsigned(7 downto 0) := C_clk_div;
 signal clk_div, spi_clk, spi_clk_o : std_logic := '0';
-signal cs, cs_p, cs_pp : std_logic := '1';
+signal cs, cs_p, cs_pp, cs_ppp : std_logic := '1';
 signal wr_data_cmplt, rd_data_cmplt : std_logic := '0';
 
 signal wr_bit_counter : unsigned(3 downto 0);
@@ -73,7 +73,7 @@ signal rd_bit_counter : unsigned(7 downto 0);
 
 signal we_ini, we_ini_p, rd_ini, rd_ini_p, doing_wr, doing_rd : std_logic := '0';
 signal operation_cmplt : std_logic := '0';
-signal operation_cmplt_reg : std_logic_vector(15 downto 0);
+signal operation_cmplt_reg : std_logic_vector(31 downto 0);
 signal wr_data_buf, wr_data_buf2 : std_logic_vector(7 downto 0);
 signal rd_addr_buf, rd_data_buf : std_logic_vector(7 downto 0) := (others => '0');
 signal doing_wr_p, doing_rd_p, load_countinous_wr : std_logic := '0';
@@ -207,7 +207,7 @@ begin
 	begin
 		if rising_edge(CLK_IN) then
 			operation_cmplt_reg(0) <= operation_cmplt;
-			operation_cmplt_reg(15 downto 1) <= operation_cmplt_reg(14 downto 0);
+			operation_cmplt_reg(31 downto 1) <= operation_cmplt_reg(30 downto 0);
 			if doing_wr = '1' and clk_div = '1' and spi_clk_o = '1' and wr_bit_counter = X"0" and WR_CONTINUOUS_IN = '0' then
 				operation_cmplt <= '1';
 			elsif doing_rd = '1' and clk_div = '1' and spi_clk_o = '1' and rd_bit_counter = X"00" and RD_CONTINUOUS_IN = '0' then
@@ -224,9 +224,9 @@ begin
 				cs <= '0';
 			elsif RD_IN = '1' then
 				cs <= '0';
-			elsif operation_cmplt = '1' and SLOW_CS_EN_IN = '0' then
+			elsif operation_cmplt_reg(3) = '1' and SLOW_CS_EN_IN = '0' then
 				cs <= '1';
-			elsif operation_cmplt_reg(15) = '1' and SLOW_CS_EN_IN = '1' then
+			elsif operation_cmplt_reg(19) = '1' and SLOW_CS_EN_IN = '1' then
 				cs <= '1';
 			end if;
 		end if;
@@ -237,7 +237,8 @@ begin
 		if rising_edge(CLK_IN) then
 			cs_p <= cs;
 			cs_pp <= cs_p;
-			if cs_pp = '0' and cs_p = '1' then
+			cs_ppp <= cs_pp;
+			if cs_ppp = '0' and cs_pp = '1' then
 				oper_cmplt_post_cs <= '1';
 			else
 				oper_cmplt_post_cs <= '0';

@@ -28,9 +28,9 @@ library UNISIM;
 use UNISIM.VComponents.all;
 
 entity clk_mod is
-    Port ( CLK_50MHz_IN 	: in  STD_LOGIC;
+    Port ( CLK_100MHz_IN 	: in  STD_LOGIC;
            CLK_25Mhz_OUT 	: out STD_LOGIC;
-			  CLK_50Mhz_OUT	: out STD_LOGIC);
+			  CLK_100Mhz_OUT	: out STD_LOGIC);
 end clk_mod;
 
 architecture Behavioral of clk_mod is
@@ -41,7 +41,7 @@ signal clk0_1xout_tmp, clk0_1xout_bufg :std_logic:='0';
 
 begin
 
-	CLK_50Mhz_OUT <= clk0_1xout_bufg;
+	CLK_100Mhz_OUT <= clk0_1xout_bufg;
 	CLK_25Mhz_OUT <= clk0_div2out_bufg;
 
  	U01_BUFG : BUFG
@@ -55,8 +55,8 @@ begin
 	DCM_SP_inst : DCM_SP
    generic map (
       CLKDV_DIVIDE => 4.0,                   -- CLKDV divide value (1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,9,10,11,12,13,14,15,16).
-      CLKFX_DIVIDE => 4,                     -- Divide value on CLKFX outputs - D - (1-32)
-      CLKFX_MULTIPLY => 2,                   -- Multiply value on CLKFX outputs - M - (2-32)
+      CLKFX_DIVIDE => 10,                     -- Divide value on CLKFX outputs - D - (1-32)
+      CLKFX_MULTIPLY => 11,                   -- Multiply value on CLKFX outputs - M - (2-32)
       CLKIN_DIVIDE_BY_2 => FALSE,            -- CLKIN divide by two (TRUE/FALSE)
       CLKIN_PERIOD => 20.0,                  -- Input clock period specified in nS
       CLKOUT_PHASE_SHIFT => "NONE",          -- Output phase shift (NONE, FIXED, VARIABLE)
@@ -80,11 +80,11 @@ begin
       PSDONE 	=> open,     			-- 1-bit output: Phase shift done output
       STATUS 	=> open,     			-- 8-bit output: DCM_SP status output
       CLKFB 	=> clk0_2xout_bufg,  -- 1-bit input: Cl DONE until DCM_SP LOCKED (TRUE/FALSE)
-      CLK0 		=> open, 				-- 1-bit output: 0 degree clock output
+      CLK0 		=> open, 	-- 1-bit output: 0 degree clock output
       CLK180 	=> open,     			-- 1-bit output: 180 degree clock output
       CLK270 	=> open,     			-- 1-bit output: 270 degree clock output
       CLK2X 	=> clk0_2xout_tmp,   -- 1-bit output: 2X clock feedback input
-      CLKIN 	=> CLK_50MHz_IN,     -- 1-bit input: Clock input
+      CLKIN 	=> CLK_100MHz_IN,     -- 1-bit input: Clock input
       DSSEN 	=> '0',       			-- 1-bit input: Unsupported, specify to GND.
       PSCLK 	=> '0',       			-- 1-bit input: Phase shift clock input
       PSEN 		=> '0',         		-- 1-bit input: Phase shift enable

@@ -31,10 +31,10 @@ entity eth_mod is
            RESET_IN 	: in  STD_LOGIC;
 			  
 			  -- Command interface
-           COMMAND_IN			: in  STD_LOGIC_VECTOR (3 downto 0);
-			  COMMAND_EN_IN		: in 	STD_LOGIC;
-           COMMAND_CMPLT_OUT 	: out STD_LOGIC;
-           ERROR_OUT 			: out  STD_LOGIC_VECTOR (7 downto 0);
+			  INIT_ENC28J60 	: in 	STD_LOGIC;
+			  DHCP_CONNECT 	: in 	STD_LOGIC;
+			  TCP_CONNECT 		: in 	STD_LOGIC;
+			  ERROR_OUT 		: out  STD_LOGIC_VECTOR (7 downto 0);
 			  
 			  -- Data Interface
 			  ADDR_IN	: in  STD_LOGIC_VECTOR (7 downto 0);
@@ -135,7 +135,7 @@ architecture Behavioral of eth_mod is
 
 subtype slv is std_logic_vector;
 
-constant C_500us : unsigned(15 downto 0) := X"FFFF"; -- X"30D4";
+constant C_62p5us : unsigned(15 downto 0) := X"186A";
 
 constant C_init_cmnds_start_addr 	: std_logic_vector(7 downto 0) := X"01";
 constant C_init_cmnds_max_addr 		: std_logic_vector(7 downto 0) := X"7F";
@@ -293,6 +293,7 @@ signal tcp_rx_data : unsigned(7 downto 0) := (others => '0');
 signal tcp_rx_data_rd_data : std_logic_vector(7 downto 0) := (others => '0');
 
 signal clk_1hz, clk_1hz_prev : std_logic := '0';
+signal init_enc28j60_waiting, dhcp_connect_waiting, tcp_connect_waiting : std_logic := '0';
 signal rx_kbytes_sec, tx_kbytes_sec : unsigned(11 downto 0);
 signal rx_bytes_counter, tx_bytes_counter : unsigned(21 downto 0);
 
@@ -300,7 +301,6 @@ signal ack_countdown : unsigned(15 downto 0);
 signal num_packets : std_logic_vector(7 downto 0) := (others => '0');
 
 type ETH_ST is (	IDLE,
-						PARSE_COMMAND,
 						TRIGGER_DHCP_DISCOVER,
 						TRIGGER_ARP_REQUEST,
 						TRIGGER_NEW_TCP_CONNECTION,
@@ -373,14 +373,7 @@ type ETH_ST is (	IDLE,
 						HANDLE_TX_TRANSMIT15,
 						HANDLE_TX_TRANSMIT16,
 						HANDLE_TX_TRANSMIT17,
-						HANDLE_TX_TRANSMIT_PRE11,
-						GET_NUM_PACKETS0,
-						GET_NUM_PACKETS1,
-						GET_NUM_PACKETS2,
-						GET_NUM_PACKETS3,
-						GET_NUM_PACKETS4,
-						GET_NUM_PACKETS5,
-						GET_NUM_PACKETS6);
+						HANDLE_TX_TRANSMIT_PRE11);
 
 signal eth_state, eth_next_state : ETH_ST := IDLE;
 signal state_debug_sig : unsigned(7 downto 0);
@@ -602,7 +595,7 @@ begin
 	--DEBUG_OUT(7 downto 0) <= X"0"&"0"&debug_rx_flag2&debug_rx_flag1&debug_rx_flag;
 	--DEBUG_OUT(7 downto 0) <= slv(num_packets);
 	--DEBUG_OUT(11 downto 0) <= slv(rx_kbytes_sec);
-	--DEBUG_OUT(15 downto 0) <= slv(interrupt_counter);
+	DEBUG_OUT(15 downto 0) <= slv(interrupt_counter);
 	--DEBUG_OUT(15 downto 0) <= slv(checksum);
 	
 --	with DEBUG_IN select
@@ -615,15 +608,15 @@ begin
 --							slv(tcp_ack_number_previous_ack5(15 downto 0)) when "110",
 --							slv(tcp_ack_number_previous_ack6(15 downto 0)) when others;
 
-	with DEBUG_IN select
-		DEBUG_OUT <= 	slv(rx_data_length(15 downto 0)) when "000",
-							slv(prev_rx_data_length(15 downto 0)) when "001",
-							slv(prev_rx_data_length1(15 downto 0)) when "010",
-							slv(prev_rx_data_length2(15 downto 0)) when "011",
-							slv(prev_rx_data_length3(15 downto 0)) when "100",
-							slv(prev_rx_data_length4(15 downto 0)) when "101",
-							slv(prev_rx_data_length5(15 downto 0)) when "110",
-							slv(prev_rx_data_length6(15 downto 0)) when others;
+--	with DEBUG_IN select
+--		DEBUG_OUT <= 	slv(rx_data_length(15 downto 0)) when "000",
+--							slv(prev_rx_data_length(15 downto 0)) when "001",
+--							slv(prev_rx_data_length1(15 downto 0)) when "010",
+--							slv(prev_rx_data_length2(15 downto 0)) when "011",
+--							slv(prev_rx_data_length3(15 downto 0)) when "100",
+--							slv(prev_rx_data_length4(15 downto 0)) when "101",
+--							slv(prev_rx_data_length5(15 downto 0)) when "110",
+--							slv(prev_rx_data_length6(15 downto 0)) when others;
 	
 --	debug_rx_flag1 <= '1' when eth_state = COPY_RX_PACKET_TO_BUF4 else '0';
 --	debug_rx_flag2 <= '1' when eth_state = COPY_RX_PACKET_TO_BUF5 else '0';
@@ -651,8 +644,6 @@ begin
 --			end case;
 --		end if;
 --	end process;
-
-	COMMAND_CMPLT_OUT <= command_cmplt;
 	
 	packet_definition_addr <= frame_addr when doing_tx_packet_config = '0' else slv(tx_packet_frame_addr);
 	frame_data <= packet_definition_data;
@@ -692,32 +683,16 @@ begin
       eth_next_state <= eth_state;  --default is to stay in current state
       case (eth_state) is
          when IDLE =>
-				if tx_packet_ready_from_transmission = '1' then -- TODO should be "..ready_for_tran.."
+				if init_enc28j60_waiting = '1' then
+					eth_next_state <= HANDLE_INIT_CMND0;
+				elsif dhcp_connect_waiting = '1' then
+					eth_next_state <= TRIGGER_DHCP_DISCOVER;
+				elsif tcp_connect_waiting = '1' then
+					eth_next_state <= TRIGGER_NEW_TCP_CONNECTION;
+				elsif tx_packet_ready_from_transmission = '1' then -- TODO should be "..ready_for_tran.."
 					eth_next_state <= PRE_TX_TRANSMIT0;
-				elsif command_waiting = '1' then
-					eth_next_state <= PARSE_COMMAND;
---				elsif DEBUG_IN(2) = '1' then
---					eth_next_state <= GET_NUM_PACKETS0; -- DEBUG
 				else
 					eth_next_state <= SERVICE_INTERRUPT0;
-				end if;
-			when PARSE_COMMAND =>
-				if command = X"3" then
-					eth_next_state <= HANDLE_INIT_CMND0;
-				elsif command = X"4" then
-					eth_next_state <= TRIGGER_DHCP_DISCOVER;
-				elsif command = X"5" then
-					eth_next_state <= TRIGGER_ARP_REQUEST;
-				elsif command = X"6" then
-					eth_next_state <= TRIGGER_NEW_TCP_CONNECTION;
-				elsif command = X"7" then
-					eth_next_state <= TRIGGER_CANCEL_DHCP_CONNECT;
-				elsif command = X"8" then
-					eth_next_state <= TRIGGER_CLOSE_TCP_CONNECTION;
-				elsif command = X"9" then
-					eth_next_state <= TRIGGER_CANCEL_TCP_CONNECTION;
-				else
-					eth_next_state <= IDLE;
 				end if;
 				
 			when HANDLE_INIT_CMND0 =>
@@ -955,28 +930,6 @@ begin
 			when HANDLE_TX_TRANSMIT17 =>
 				eth_next_state <= IDLE;
 				
-			-- DEBUG
-			when GET_NUM_PACKETS0 =>
-				eth_next_state <= GET_NUM_PACKETS1;
-			when GET_NUM_PACKETS1 =>
-				if spi_oper_cmplt = '1' then
-					eth_next_state <= GET_NUM_PACKETS2;
-				end if;
-			when GET_NUM_PACKETS2 =>
-				eth_next_state <= GET_NUM_PACKETS3;
-			when GET_NUM_PACKETS3 =>
-				if spi_oper_cmplt = '1' then
-					eth_next_state <= GET_NUM_PACKETS4;
-				end if;
-			when GET_NUM_PACKETS4 =>
-				eth_next_state <= GET_NUM_PACKETS5;			
-			when GET_NUM_PACKETS5 =>
-				if spi_oper_cmplt = '1' then
-					eth_next_state <= GET_NUM_PACKETS6;
-				end if;
-			when GET_NUM_PACKETS6 =>
-				eth_next_state <= IDLE;
-				
 		end case;
 	end process;
 
@@ -987,10 +940,6 @@ begin
 				spi_wr_continuous <= '1';
 			elsif tx_packet_length_counter = X"0000" then
 				spi_wr_continuous <= '0';
-			end if;
-			-- DEBUG
-			if eth_state = GET_NUM_PACKETS6 then
-				num_packets <= spi_data_rd;
 			end if;
 		end if;
 	end process;
@@ -1003,6 +952,21 @@ begin
 				poll_interrupt_reg <= '1';
 			else
 				poll_interrupt_reg <= '0';
+			end if;
+			if INIT_ENC28J60 = '1' then
+				init_enc28j60_waiting <= '1';
+			elsif eth_state = HANDLE_INIT_CMND0 then
+				init_enc28j60_waiting <= '0';
+			end if;
+			if DHCP_CONNECT = '1' then
+				dhcp_connect_waiting <= '1';
+			elsif eth_state = TRIGGER_DHCP_DISCOVER then
+				dhcp_connect_waiting <= '0';
+			end if;
+			if TCP_CONNECT = '1' then
+				tcp_connect_waiting <= '1';
+			elsif eth_state = TRIGGER_NEW_TCP_CONNECTION then
+				tcp_connect_waiting <= '0';
 			end if;
 		end if;
 	end process;
@@ -1020,9 +984,6 @@ begin
 			elsif eth_state = HANDLE_TX_TRANSMIT9 then
 				tx_packet_ram_rd_addr <= tx_packet_ram_rd_addr + 1;
 			end if;
---			if DEBUG_IN = '1' then
---				tx_packet_ram_rd_addr <= tx_packet_ram_rd_addr + 1;
---			end if;
 		end if;
 	end process;
 	
@@ -1119,12 +1080,6 @@ begin
 			elsif eth_state = HANDLE_TX_TRANSMIT15 then
 				spi_we <= '1';
 				
-			-- DEBUG
-			elsif eth_state = GET_NUM_PACKETS0 then
-				spi_we <= '1';
-			elsif eth_state = GET_NUM_PACKETS2 then
-				spi_we <= '1';
-				
 			else
 				spi_we <= '0';
 			end if;
@@ -1169,12 +1124,6 @@ begin
 			elsif eth_state = HANDLE_TX_TRANSMIT13 then
 				spi_wr_addr <= X"47";
 			elsif eth_state = HANDLE_TX_TRANSMIT15 then
-				spi_wr_addr <= X"9F";
-			
-			-- DEBUG
-			elsif eth_state = GET_NUM_PACKETS0 then
-				spi_wr_addr <= X"BF";
-			elsif eth_state = GET_NUM_PACKETS2 then
 				spi_wr_addr <= X"9F";
 				
 			end if;
@@ -1223,12 +1172,6 @@ begin
 			elsif eth_state = HANDLE_TX_TRANSMIT15 then
 				spi_wr_data <= X"08";
 				
-			-- DEBUG
-			elsif eth_state = GET_NUM_PACKETS0 then
-				spi_wr_data <= X"02";
-			elsif eth_state = GET_NUM_PACKETS2 then
-				spi_wr_data <= X"01";
-				
 			end if;
       end if;
    end process;
@@ -1255,10 +1198,6 @@ begin
 				spi_rd_addr <= X"3A";
 			elsif eth_state = COPY_RX_PACKET_TO_BUF1 then
 				spi_rd_addr <= X"3A";
-			
-			-- DEBUG
-			elsif eth_state = GET_NUM_PACKETS4 then
-				spi_rd_addr <= X"19";
 				
 			end if;
       end if;
@@ -1275,11 +1214,7 @@ begin
 				spi_rd <= '1';
 			elsif eth_state = COPY_RX_PACKET_TO_BUF1 then
 				spi_rd <= '1';
-			
-			-- DEBUG
-			elsif eth_state = GET_NUM_PACKETS4 then
-				spi_rd <= '1';
-				
+
 			else
 				spi_rd <= '0';
 			end if;
@@ -1311,35 +1246,6 @@ begin
 			end if;
       end if;
    end process;
-
-	COMMAND_PROC: process(CLK_IN)
-   begin
-      if rising_edge(CLK_IN) then
-			command_en_in_p <= COMMAND_EN_IN;
-			if command_en_in_p = '0' and COMMAND_EN_IN = '1' then
-				command_trig <= '1';
-			else
-				command_trig <= '0';
-			end if;
-			if command_trig = '1' then
-				command_waiting <= '1';
-			elsif eth_state = PARSE_COMMAND then
-				command_waiting <= '0';
-			end if;
-			if command_trig = '1' then
-				command <= COMMAND_IN;
-			end if;
-		end if;
-	end process;
-
---	INT_DEBUG_PROC: process(CLK_IN)
---   begin
---      if rising_edge(CLK_IN) then
---			if eth_state = HANDLE_RX_INTERRUPT0 then
---				interrupt_counter <= interrupt_counter + 1;
---			end if;
---		end if;
---	end process;
 
 ------------------------- RX PACKET --------------------------------
 
@@ -1890,7 +1796,7 @@ begin
 	begin
 		if rising_edge(CLK_IN) then
 			if packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
-				ack_countdown <= C_500us;
+				ack_countdown <= C_62p5us;
 			elsif ack_countdown /= X"0000" then
 				ack_countdown <= ack_countdown - 1;
 			end if;

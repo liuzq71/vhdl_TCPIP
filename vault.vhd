@@ -27,19 +27,12 @@ use UNISIM.VComponents.all;
 
 entity vault is
     Port ( 	CLK_IN 		: in STD_LOGIC;
-				RX_IN 		: in  STD_LOGIC;
-				TX_OUT 		: out  STD_LOGIC;
+
 				LED_OUT 		: out STD_LOGIC_VECTOR (7 downto 0);
 				SSEG_OUT 	: out STD_LOGIC_VECTOR (7 downto 0);
 				SSEG_EN_OUT : out STD_LOGIC_VECTOR (3 downto 0);
 				SW_IN 		: in STD_LOGIC_VECTOR (7 downto 0);
 				BUTTON_IN 	: in STD_LOGIC_VECTOR (5 downto 0);
-
-				vgaRed		: out STD_LOGIC_VECTOR (2 downto 0);
-				vgaGreen		: out STD_LOGIC_VECTOR (2 downto 0);
-				vgaBlue		: out STD_LOGIC_VECTOR (1 downto 0);
-				Hsync			: out STD_LOGIC;
-				Vsync			: out STD_LOGIC;
 				
 				SDI			: in STD_LOGIC;
 				SDO			: out STD_LOGIC;
@@ -59,9 +52,9 @@ end vault;
 architecture Behavioral of vault is
 
 	COMPONENT clk_mod
-		 Port ( CLK_50MHz_IN 	: in  STD_LOGIC;
+		 Port ( CLK_100MHz_IN 	: in  STD_LOGIC;
 				  CLK_25Mhz_OUT 	: out  STD_LOGIC;
-				  CLK_50Mhz_OUT 	: out  STD_LOGIC);
+				  CLK_100Mhz_OUT 	: out  STD_LOGIC);
 	END COMPONENT;
 	
 	COMPONENT sseg
@@ -70,54 +63,6 @@ architecture Behavioral of vault is
 		VAL_IN  	: in STD_LOGIC_VECTOR (15 downto 0);
 		SSEG_OUT	: out STD_LOGIC_VECTOR(7 downto 0);
 		AN_OUT   : out STD_LOGIC_VECTOR(3 downto 0));
-	END COMPONENT;
-
-	COMPONENT vga80x40
-	  PORT (
-		 reset       : in  std_logic;
-		 clk25MHz    : in  std_logic;
-		 TEXT_A      : out std_logic_vector(11 downto 0);
-		 TEXT_D      : in  std_logic_vector(07 downto 0);
-		 FONT_A      : out std_logic_vector(11 downto 0);
-		 FONT_D      : in  std_logic_vector(07 downto 0);
-		 --
-		 ocrx        : in  std_logic_vector(07 downto 0);
-		 ocry        : in  std_logic_vector(07 downto 0);
-		 octl        : in  std_logic_vector(07 downto 0);
-		 --
-		 R           : out std_logic;
-		 G           : out std_logic;
-		 B           : out std_logic;
-		 hsync       : out std_logic;
-		 vsync       : out std_logic);   
-	END COMPONENT;
-	
-	COMPONENT user_input_handler
-		 PORT ( CLK_IN 			: in  STD_LOGIC;
-				  
-				  RX_IN 				: in  STD_LOGIC;
-				  TX_OUT 			: out  STD_LOGIC;
-				  
-				  TEXT_ADDR_IN 	: in  STD_LOGIC_VECTOR (11 downto 0);
-				  TEXT_DATA_OUT 	: out  STD_LOGIC_VECTOR (7 downto 0);
-				  FONT_ADDR_IN 	: in  STD_LOGIC_VECTOR (11 downto 0);
-				  FONT_DATA_OUT 	: out  STD_LOGIC_VECTOR (7 downto 0);
-				  CURSORPOS_X_OUT : out  STD_LOGIC_VECTOR (7 downto 0);
-				  CURSORPOS_Y_OUT : out  STD_LOGIC_VECTOR (7 downto 0);
-				  
-				  ADDR_OUT				: out STD_LOGIC_VECTOR(7 downto 0);
-				  DATA_IN				: in STD_LOGIC_VECTOR(7 downto 0);
-				  
-				  ETH_COMMAND_OUT			: out STD_LOGIC_VECTOR(3 downto 0);
-				  ETH_COMMAND_EN_OUT		: out STD_LOGIC;
-				  ETH_COMMAND_CMPLT_IN	: in STD_LOGIC;
-				  ETH_COMMAND_ERR_IN		: in STD_LOGIC_VECTOR(7 downto 0);
-				  
-				  CLK_1HZ_IN	: in STD_LOGIC
-				  
---				  DEBUG_OUT		: out STD_LOGIC_VECTOR(7 downto 0);
---				  DEBUG_OUT2	: out STD_LOGIC_VECTOR(7 downto 0)
-				  );
 	END COMPONENT;
 
 	COMPONENT led_mod is
@@ -134,10 +79,10 @@ architecture Behavioral of vault is
            RESET_IN 	: in  STD_LOGIC;
 			  
 			  -- Command interface
-           COMMAND_IN			: in  STD_LOGIC_VECTOR (3 downto 0);
-			  COMMAND_EN_IN		: in 	STD_LOGIC;
-           COMMAND_CMPLT_OUT 	: out STD_LOGIC;
-           ERROR_OUT 			: out  STD_LOGIC_VECTOR (7 downto 0);
+			  INIT_ENC28J60 	: in 	STD_LOGIC;
+			  DHCP_CONNECT 	: in 	STD_LOGIC;
+			  TCP_CONNECT 		: in 	STD_LOGIC;
+			  ERROR_OUT 		: out  STD_LOGIC_VECTOR (7 downto 0);
 			  
 			  -- Data Interface
 			  ADDR_IN	: in  STD_LOGIC_VECTOR (7 downto 0);
@@ -163,8 +108,7 @@ architecture Behavioral of vault is
 
 subtype slv is std_logic_vector;
 
-signal clk_25MHz, clk_50MHz : std_logic;
-
+signal clk_25MHz, clk_100MHz : std_logic;
 signal clk_1hz : std_logic;
 
 signal char_addr, font_addr	: std_logic_vector(11 downto 0);
@@ -184,7 +128,7 @@ signal sseg_data : std_logic_vector(15 downto 0) := (others => '0');
 signal debug_we : std_logic := '0';
 signal debug_wr_addr : unsigned(11 downto 0) := (others => '0');
 signal debug_wr_data : std_logic_vector(7 downto 0) := (others => '0');
-signal buttons, buttons_prev, buttons_edge	: std_logic_vector(3 downto 0) := (others => '0');
+signal buttons, buttons_prev, buttons_edge	: std_logic_vector(5 downto 0) := (others => '0');
 signal debounce_count								: unsigned(15 downto 0) := (others => '0');
 
 signal data_bus, addr_bus 	: std_logic_vector(7 downto 0) := (others => '0');
@@ -200,13 +144,13 @@ signal tcp_rd_en : std_logic;
 begin
 	
 	clk_mod_Inst : clk_mod
-	PORT MAP ( 	CLK_50MHz_IN 	=> CLK_IN,
+	PORT MAP ( 	CLK_100MHz_IN 	=> CLK_IN,
 					CLK_25Mhz_OUT 	=> clk_25MHz,
-					CLK_50Mhz_OUT 	=> clk_50MHz);
+					CLK_100Mhz_OUT => clk_100MHz);
 	
 --------------------------- DEBUG LOGIC ------------------------------
 	
-	LED_OUT(4 downto 3) <= (others => '0');
+	LED_OUT(4 downto 2) <= (others => '0');
 	--LED_OUT(7 downto 4) <= sseg_data(15 downto 12);
 	LED_OUT(7 downto 5) <= debug_i;
 	
@@ -243,32 +187,19 @@ begin
 	
 	process(clk_25MHz)
 	begin
-		if rising_edge(clk_25MHz) then
+		if rising_edge(clk_100MHz) then
 			debounce_count <= debounce_count + 1;
 			buttons_prev <= buttons;
 			if debounce_count = X"0000" then
-				buttons <= BUTTON_IN(3 downto 0);
+				buttons <= BUTTON_IN;
 			end if;
-			if buttons_prev(0) = '0' and buttons(0) = '1' then
-				buttons_edge(0) <= '1';
-			else
-				buttons_edge(0) <= '0';
-			end if;
-			if buttons_prev(1) = '0' and buttons(1) = '1' then
-				buttons_edge(1) <= '1';
-			else
-				buttons_edge(1) <= '0';
-			end if;
-			if buttons_prev(2) = '0' and buttons(2) = '1' then
-				buttons_edge(2) <= '1';
-			else
-				buttons_edge(2) <= '0';
-			end if;
-			if buttons_prev(3) = '0' and buttons(3) = '1' then
-				buttons_edge(3) <= '1';
-			else
-				buttons_edge(3) <= '0';
-			end if;
+			for i in 0 to 5 loop
+				if buttons_prev(i) = '0' and buttons(i) = '1' then
+					buttons_edge(i) <= '1';
+				else
+					buttons_edge(i) <= '0';
+				end if;
+			end loop;
 		end if;
 	end process;
 
@@ -282,76 +213,21 @@ begin
 					LEDS_OUT 			=> LED_OUT(1 downto 0),
 					
 					CLK_1HZ_OUT			=> clk_1hz);
-
-	vgaRed <= r&r&r;
-	vgaGreen <= g&g&g;
-	vgaBlue <= b&b;
-	octl <= "11100111";
-	
-	vga80x40_inst : vga80x40
-	PORT MAP (	
-		 reset       =>  '0',
-		 clk25MHz    => clk_25MHz,
-		 TEXT_A      => char_addr,
-		 TEXT_D      => char_data,
-		 FONT_A      => font_addr,
-		 FONT_D      => font_data,
-
-		 ocrx        => slv(ocrx),
-		 ocry        => slv(ocry),
-		 octl        => octl,
-
-		 R           => r,
-		 G           => g,
-		 B           => b,
-		 hsync       => Hsync,
-		 vsync       => Vsync);
-
-	user_input_handler_inst : user_input_handler
-	PORT MAP (	
-				CLK_IN 				=> clk_25MHz,
-				RX_IN 				=> RX_IN,
-				TX_OUT 				=> TX_OUT,
-				
-				TEXT_ADDR_IN 		=> char_addr,
-				TEXT_DATA_OUT 		=> char_data,
-				FONT_ADDR_IN 		=> font_addr,
-				FONT_DATA_OUT 		=> font_data,
-				CURSORPOS_X_OUT 	=> ocrx,
-				CURSORPOS_Y_OUT 	=> ocry,
-				
-				ADDR_OUT					=> addr_bus,
-				DATA_IN					=> data_bus,
-				
-				ETH_COMMAND_OUT		=> eth_command,
-			   ETH_COMMAND_EN_OUT	=> eth_command_en,
-				ETH_COMMAND_CMPLT_IN	=> eth_command_cmplt,
-				ETH_COMMAND_ERR_IN	=> eth_command_err,
-				
-				CLK_1HZ_IN	=> clk_1hz
-				
---				DEBUG_OUT			=> open,
---				DEBUG_OUT2			=> open
-				);
 				
 ------------------------- Ethernet I/O --------------------------------
 
 	RESET <= '0';
-	--debug_i <= buttons_edge(2)&buttons(1)&buttons_edge(0);
 	debug_i <= buttons(2)&buttons(1)&buttons(0);
 
 	eth_mod_inst : eth_mod
-		 Port Map ( CLK_IN 	=> clk_25MHz,
+		 Port Map ( CLK_IN 	=> clk_100MHz,
 						RESET_IN => '0',
 				  
 					  -- Command interface
---					  COMMAND_IN			=> SW_IN(3 downto 0),
---					  COMMAND_EN_IN		=> buttons_edge(0),
-
-					  COMMAND_IN			=> eth_command,
-					  COMMAND_EN_IN		=> eth_command_en,
-					  COMMAND_CMPLT_OUT 	=> LED_OUT(2),
-					  ERROR_OUT 			=> eth_command_err,
+					  INIT_ENC28J60 	=> buttons_edge(3),
+					  DHCP_CONNECT 	=> buttons_edge(4),
+					  TCP_CONNECT 		=> buttons_edge(5),
+					  ERROR_OUT 		=> eth_command_err,
 					  
 					  -- Data Interface
 					  ADDR_IN 	=> addr_bus,
@@ -376,7 +252,7 @@ begin
 					  
 	process(clk_25MHz)
 	begin
-		if rising_edge(clk_25MHz) then
+		if rising_edge(clk_100MHz) then
 			if clk_div_counter = X"00" then
 				clk_div_counter <= unsigned(SW_IN);
 			else
