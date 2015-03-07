@@ -101,6 +101,18 @@ architecture Behavioral of eth_mod is
            CHECKSUM_DONE_OUT 		: out STD_LOGIC);
 	END COMPONENT;
 	
+	COMPONENT TCP_FIFO
+	  PORT (
+		 clk : IN STD_LOGIC;
+		 din : IN STD_LOGIC_VECTOR(7 DOWNTO 0);
+		 wr_en : IN STD_LOGIC;
+		 rd_en : IN STD_LOGIC;
+		 dout : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
+		 full : OUT STD_LOGIC;
+		 empty : OUT STD_LOGIC;
+		 data_count : OUT STD_LOGIC_VECTOR(11 DOWNTO 0));
+	END COMPONENT;
+	
 	COMPONENT lfsr32_mod
 		 Port ( CLK_IN 		: in  STD_LOGIC;
 				  SEED_IN 		: in  STD_LOGIC_VECTOR(31 downto 0);
@@ -219,14 +231,14 @@ signal dhcp_addr_locked, static_addr_locked 	: std_logic := '0';
 signal server_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100";	-- 192.168.1.0 (should be router_ip_address ?)
 signal server_mac_addr : std_logic_vector(47 downto 0) := X"000000000000";
 
---signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"76D24459"; -- 118.210.68.89
+--signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"76D2707C"; -- 118.210.112.124
 signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100"; -- 192.168.1.0
 
 signal tx_packet_frame_addr :unsigned(10 downto 0);
 signal tx_packet_length, tx_packet_length_counter, tx_packet_end_pointer :unsigned(15 downto 0);
 signal doing_tx_packet_config, tx_packet_frame_data_rd : std_logic := '0';
 signal packet_instruction, packet_data : std_logic_vector(7 downto 0);
-signal tx_packet_ready_from_transmission : std_logic := '0';
+signal tx_packet_ready_for_transmission : std_logic := '0';
 
 signal ip_packet_version  			: std_logic_vector(3 downto 0);
 signal ip_packet_protocol 			: std_logic_vector(7 downto 0);
@@ -269,7 +281,8 @@ signal tcp_ack_number_previous_ack1, tcp_ack_number_previous_ack2, tcp_ack_numbe
 signal tcp_ack_number_previous_ack4, tcp_ack_number_previous_ack5, tcp_ack_number_previous_ack6 : unsigned(31 downto 0) := (others => '0');
 signal tcp_sequence_number_p1 : unsigned(31 downto 0) := (others => '0');
 signal tcp_flags : std_logic_vector(7 downto 0) := (others => '0');
-signal window_size, requested_data_size : unsigned(11 downto 0);
+signal window_size : unsigned(11 downto 0) := X"E00";
+signal requested_data_size : unsigned(11 downto 0);
 signal send_tcp_svn_packet, send_tcp_ack_packet, cancel_dhcp_connect : std_logic := '0';
 signal tcp_connection_active, close_tcp_connection, cancel_tcp_connection : std_logic := '0';
 signal tcp_ip_identification : unsigned(15 downto 0);
@@ -286,11 +299,10 @@ signal prev_rx_data_length1, prev_rx_data_length2, prev_rx_data_length3 : unsign
 signal prev_rx_data_length4, prev_rx_data_length5, prev_rx_data_length6 : unsigned(15 downto 0);
 
 signal tcp_rx_data_we, tcp_rd_data_available, tcp_data_rd_en : std_logic := '0';
-signal tcp_rx_data_wr_addr : unsigned(11 downto 0) := X"001";
-signal tcp_rx_data_rd_addr : unsigned(11 downto 0) := (others => '0');
-signal tcp_rx_data_wr_addr_m1 : unsigned(11 downto 0) := (others => '0');
-signal tcp_rx_data : unsigned(7 downto 0) := (others => '0');
-signal tcp_rx_data_rd_data : std_logic_vector(7 downto 0) := (others => '0');
+signal tcp_rx_ram_almost_full : std_logic := '0';
+signal tcp_rd_data_count 		: std_logic_vector(11 downto 0) := (others => '0');
+signal tcp_rx_data 				: unsigned(7 downto 0) := (others => '0');
+signal tcp_rx_data_rd_data 	: std_logic_vector(7 downto 0) := (others => '0');
 
 signal clk_1hz, clk_1hz_prev : std_logic := '0';
 signal init_enc28j60_waiting, dhcp_connect_waiting, tcp_connect_waiting : std_logic := '0';
@@ -513,12 +525,11 @@ type PACKET_HANDLER_ST is (	IDLE,
 										CHECK_TCP_PSH_ACK_PACKET1,
 										CHECK_TCP_PSH_ACK_PACKET2,
 										CHECK_TCP_PSH_ACK_PACKET3,
-										CHECK_TCP_PSH_ACK_PACKET4,
+										READ_TCP_RX_DATA,
 										TRIGGER_TCP_ACK0,
 										TRIGGER_TCP_ACK1,
 										TRIGGER_TCP_ACK2,
 										TRIGGER_TCP_ACK3,
-										--SEND_PREVIOUS_ACK0,
 										SEQ_ACK_NUM_FAILURE,
 										COMPLETE
 									);
@@ -562,12 +573,13 @@ signal tx_packet_state, tx_packet_next_state : TX_PACKET_CONFIG_ST := IDLE;
 begin
 	
 	--DEBUG_OUT(15 downto 8) <= X"00";
-	--DEBUG_OUT(15 downto 12) <= X"0";
+	DEBUG_OUT(15 downto 12) <= X"0";
 	--DEBUG_OUT(15 downto 12) <= slv(interrupt_counter(3 downto 0));
 	--DEBUG_OUT <= slv(rx_data_length);
 	--DEBUG_OUT <= udp_source_port when DEBUG_IN = '0' else udp_dest_port;
 	--DEBUG_OUT <= rx_tcp_source_port when DEBUG_IN = '0' else rx_tcp_dest_port;
 	--DEBUG_OUT <= rx_tcp_window_size when DEBUG_IN = '0' else rx_tcp_checksum;
+	DEBUG_OUT(11 downto 0) <= slv(window_size);
 	--DEBUG_OUT(7 downto 0) <= slv(rx_tcp_option_length);
 	--DEBUG_OUT <= "00000"&slv(tcp_option_addr);
 	--DEBUG_OUT(7 downto 4) <= X"0";
@@ -595,55 +607,8 @@ begin
 	--DEBUG_OUT(7 downto 0) <= X"0"&"0"&debug_rx_flag2&debug_rx_flag1&debug_rx_flag;
 	--DEBUG_OUT(7 downto 0) <= slv(num_packets);
 	--DEBUG_OUT(11 downto 0) <= slv(rx_kbytes_sec);
-	DEBUG_OUT(15 downto 0) <= slv(interrupt_counter);
+	--DEBUG_OUT(15 downto 0) <= slv(interrupt_counter);
 	--DEBUG_OUT(15 downto 0) <= slv(checksum);
-	
---	with DEBUG_IN select
---		DEBUG_OUT <= 	slv(tcp_acknowledge_number(15 downto 0)) when "000",
---							slv(tcp_ack_number_previous_ack(15 downto 0)) when "001",
---							slv(tcp_ack_number_previous_ack1(15 downto 0)) when "010",
---							slv(tcp_ack_number_previous_ack2(15 downto 0)) when "011",
---							slv(tcp_ack_number_previous_ack3(15 downto 0)) when "100",
---							slv(tcp_ack_number_previous_ack4(15 downto 0)) when "101",
---							slv(tcp_ack_number_previous_ack5(15 downto 0)) when "110",
---							slv(tcp_ack_number_previous_ack6(15 downto 0)) when others;
-
---	with DEBUG_IN select
---		DEBUG_OUT <= 	slv(rx_data_length(15 downto 0)) when "000",
---							slv(prev_rx_data_length(15 downto 0)) when "001",
---							slv(prev_rx_data_length1(15 downto 0)) when "010",
---							slv(prev_rx_data_length2(15 downto 0)) when "011",
---							slv(prev_rx_data_length3(15 downto 0)) when "100",
---							slv(prev_rx_data_length4(15 downto 0)) when "101",
---							slv(prev_rx_data_length5(15 downto 0)) when "110",
---							slv(prev_rx_data_length6(15 downto 0)) when others;
-	
---	debug_rx_flag1 <= '1' when eth_state = COPY_RX_PACKET_TO_BUF4 else '0';
---	debug_rx_flag2 <= '1' when eth_state = COPY_RX_PACKET_TO_BUF5 else '0';
-	
---	debug_state: process(CLK_IN)
---	begin
--- 		if rising_edge(CLK_IN) then
---			case (eth_state) is
---				when IDLE =>
---					state_debug_sig(0) <= '1';
---				when others =>
---					state_debug_sig(0) <= '0';
---			end case;
---			case (packet_handler_state) is
---				when IDLE =>
---					state_debug_sig(1) <= '1';
---				when others =>
---					state_debug_sig(1) <= '0';
---			end case;
---			case (tx_packet_state) is
---				when IDLE =>
---					state_debug_sig(2) <= '1';
---				when others =>
---					state_debug_sig(2) <= '0';
---			end case;
---		end if;
---	end process;
 	
 	packet_definition_addr <= frame_addr when doing_tx_packet_config = '0' else slv(tx_packet_frame_addr);
 	frame_data <= packet_definition_data;
@@ -656,12 +621,6 @@ begin
 	INT_PROC: process(CLK_IN)
    begin
       if rising_edge(CLK_IN) then
---			if packet_handler_state = CHECK_TCP_PSH_ACK_PACKET3 then -- TODO DEBUG
---				interrupt_counter <= interrupt_counter + 1;
---			end if;
---			if eth_state = SERVICE_INTERRUPT5 and eir_register(6) = '1' then -- TODO DEBUG
---				interrupt_counter <= interrupt_counter + 1;
---			end if;
 			if packet_handler_state = SEQ_ACK_NUM_FAILURE then
 				interrupt_counter <= interrupt_counter + 1;
 			end if;
@@ -676,7 +635,7 @@ begin
    end process;
 
 	NEXT_STATE_DECODE: process (eth_state, command, command_waiting, init_cmnd_addr, poll_interrupt_reg,
-											frame_data, tx_packet_ready_from_transmission, spi_oper_cmplt, 
+											frame_data, tx_packet_ready_for_transmission, spi_oper_cmplt, 
 												eir_register, previous_packet_pointer, next_packet_pointer, rx_packet_handled, 
 													tx_packet_length_counter, spi_rd_cmplt, spi_wr_cmplt, DEBUG_IN(0))
    begin
@@ -689,7 +648,7 @@ begin
 					eth_next_state <= TRIGGER_DHCP_DISCOVER;
 				elsif tcp_connect_waiting = '1' then
 					eth_next_state <= TRIGGER_NEW_TCP_CONNECTION;
-				elsif tx_packet_ready_from_transmission = '1' then -- TODO should be "..ready_for_tran.."
+				elsif tx_packet_ready_for_transmission = '1' then
 					eth_next_state <= PRE_TX_TRANSMIT0;
 				else
 					eth_next_state <= SERVICE_INTERRUPT0;
@@ -1286,6 +1245,7 @@ begin
 	rx_packet_ram_we <= '1' when eth_state = COPY_RX_PACKET_TO_BUF3 else '0';
 	rx_packet_ram_we_addr <= rx_packet_ram_we_addr_buf when doing_tx_packet_config = '0' else rx_packet_rd2_addr;
 
+	-- TODO TODO TODO Can be made smaller! Only needs to accommodate 1 packet (1536 bytes)
 	RX_PACKET_RAM : TDP_RAM
 		Generic Map (	G_DATA_A_SIZE 	=> spi_data_rd'length,
 							G_ADDR_A_SIZE	=> rx_packet_ram_we_addr'length,
@@ -1760,27 +1720,28 @@ begin
 			-- DEBUG
 			when SEQ_ACK_NUM_FAILURE =>
 				packet_handler_next_state <= COMPLETE;
-				
+
 			when CHECK_TCP_PSH_ACK_PACKET2 =>
 				packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET3;
 			when CHECK_TCP_PSH_ACK_PACKET3 =>
-				packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET4; 
-			when CHECK_TCP_PSH_ACK_PACKET4 =>
-				if RESIZE(rx_packet_ram_rd_addr, 16) >= total_packet_length then
+				packet_handler_next_state <= READ_TCP_RX_DATA;
+				
+			when READ_TCP_RX_DATA =>
+				if RESIZE(rx_packet_ram_rd_addr, 16) > total_packet_length then
 					packet_handler_next_state <= COMPLETE;
 				end if;
 
 			when TRIGGER_TCP_ACK0 =>
 				packet_handler_next_state <= TRIGGER_TCP_ACK1;
 			when TRIGGER_TCP_ACK1 =>
-				if window_size > X"1FF" then
+				if window_size > X"136" then
 					packet_handler_next_state <= TRIGGER_TCP_ACK2;
 				end if;
 			when TRIGGER_TCP_ACK2 =>
 				packet_handler_next_state <= TRIGGER_TCP_ACK3;
 			when TRIGGER_TCP_ACK3 =>
 				if tx_packet_state = INIT_TCP_PACKET_METADATA then
-					packet_handler_next_state <= COMPLETE; --CHECK_TCP_PSH_ACK_PACKET2;
+					packet_handler_next_state <= COMPLETE;
 				end if;
 
 --			when SEND_PREVIOUS_ACK0 =>
@@ -1850,7 +1811,7 @@ begin
 				rx_packet_ram_rd_addr <= next_protocol_start_addr;
 			elsif packet_handler_state = PARSE_TCP_PACKET20 then
 				rx_packet_ram_rd_addr <= tcp_option_addr;
-			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
+			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET3 then
 				rx_packet_ram_rd_addr <= "000"&X"3A";
 			elsif packet_handler_state = HANDLE_DHCP_ACK1 then
 				rx_packet_ram_rd_addr <= "000"&X"0A";
@@ -2041,18 +2002,6 @@ begin
 				rx_data_length <= rx_data_length - RESIZE(unsigned(rx_tcp_header_length), 16);
 			elsif packet_handler_state = PARSE_TCP_PACKET16 then
 				rx_data_length <= rx_data_length - RESIZE(unsigned(ip_packet_header_length), 16);
---			elsif packet_handler_state = SEND_PREVIOUS_ACK0 then
---				rx_data_length <= prev_rx_data_length; -- resending ACK, restore previous rx data length number
-			end if;
-			if packet_handler_state = CHECK_TCP_PSH_ACK_PACKET3 then -- TODO DEBUG
-				prev_rx_data_length <= rx_data_length;
-				prev_rx_data_length1 <= prev_rx_data_length;
-				prev_rx_data_length2 <= prev_rx_data_length1;
-				prev_rx_data_length3 <= prev_rx_data_length2;
-				prev_rx_data_length4 <= prev_rx_data_length3;
-				prev_rx_data_length5 <= prev_rx_data_length4;
-				prev_rx_data_length6 <= prev_rx_data_length5;
-				
 			end if;
 			if packet_handler_state = PARSE_TCP_PACKET16 then
 				rx_tcp_window_size(15 downto 8) <= rx_packet_rd_data;
@@ -2387,29 +2336,15 @@ begin
 			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET3 then
 				tcp_acknowledge_number <= tcp_acknowledge_number + RESIZE(rx_data_length, 32);
 			end if;
-			if packet_handler_state = CHECK_TCP_PSH_ACK_PACKET3 then
-				tcp_ack_number_previous_ack <= tcp_acknowledge_number;
-				tcp_ack_number_previous_ack1 <= tcp_ack_number_previous_ack;
-				tcp_ack_number_previous_ack2 <= tcp_ack_number_previous_ack1;
-				tcp_ack_number_previous_ack3 <= tcp_ack_number_previous_ack2;
-				tcp_ack_number_previous_ack4 <= tcp_ack_number_previous_ack3;
-				tcp_ack_number_previous_ack5 <= tcp_ack_number_previous_ack4;
-				tcp_ack_number_previous_ack6 <= tcp_ack_number_previous_ack5;
-				
---			elsif packet_handler_state = SEND_PREVIOUS_ACK0 then -- resending ACK, restore previous ack number
---				tcp_acknowledge_number <= tcp_ack_number_previous_ack;
-			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				tcp_flags <= C_tcp_syn_flags;
 			elsif packet_handler_state = TRIGGER_TCP_ACK0 then
 				tcp_flags <= C_tcp_ack_flags;
 			end if;
 			if packet_handler_state = TRIGGER_TCP_ACK0 then
-				window_size <= not(tcp_rx_data_wr_addr) + tcp_rx_data_rd_addr;
+				window_size <= X"FFF" - unsigned(tcp_rd_data_count);
 			elsif packet_handler_state = TRIGGER_TCP_ACK1 then
-				window_size <= not(tcp_rx_data_wr_addr) + tcp_rx_data_rd_addr;
-			elsif packet_handler_state = TRIGGER_TCP_ACK2 then
-				window_size <= window_size - X"200"; -- space for TCP headers
+				window_size <= X"FFF" - unsigned(tcp_rd_data_count);
 			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				expecting_syn_ack <= '1';
@@ -2495,9 +2430,9 @@ begin
 				tx_packet_ram_we_addr_buf <= unsigned(checksum_wr_addr);
 			end if;
 			if tx_packet_state = COMPLETE then
-				tx_packet_ready_from_transmission <= '1';
+				tx_packet_ready_for_transmission <= '1';
 			elsif eth_state = HANDLE_TX_TRANSMIT17 then
-				tx_packet_ready_from_transmission <= '0';
+				tx_packet_ready_for_transmission <= '0';
 			end if;
 			if tx_packet_state = SET_RX_PACKET_ADDR_LOWER_BYTE then
 				rx_packet_rd2_addr(7 downto 0) <= unsigned(frame_data(7 downto 0));
@@ -2515,6 +2450,7 @@ begin
 
 	tx_packet_ram_we_addr <= unsigned(checksum_addr) when (tx_packet_state = WAIT_FOR_CHECKSUM_CMPLT) else tx_packet_ram_we_addr_buf;
 
+	-- TODO TODO TODO Can be made smaller (only needs to be able to accommodate 1 packet (1536 btytes))
 	TX_PACKET_RAM : TDP_RAM
 		Generic Map (	G_DATA_A_SIZE 	=> tx_packet_ram_data'length,
 							G_ADDR_A_SIZE	=> tx_packet_ram_we_addr'length,
@@ -2623,47 +2559,21 @@ begin
 --------------------- TCP RX DATA ----------------------------
 
 	tcp_data_rd_en <= TCP_RD_DATA_EN_IN;
-	TCP_RD_DATA_AVAIL_OUT <= tcp_rd_data_available;
+	TCP_RD_DATA_AVAIL_OUT <= not(tcp_rd_data_available);
 	TCP_RD_DATA_OUT <= tcp_rx_data_rd_data;
+	
+	tcp_rx_data_we <= '1' when (packet_handler_next_state = READ_TCP_RX_DATA) else '0';
 
-	process(CLK_IN)
-	begin
-		if rising_edge(CLK_IN) then
-			if tcp_rx_data_wr_addr_m1 /= tcp_rx_data_rd_addr then
-				tcp_rd_data_available <= '1';
-			else
-				tcp_rd_data_available <= '0';
-			end if;
-			if tcp_data_rd_en = '1' then
-				if tcp_rx_data_wr_addr_m1 /= tcp_rx_data_rd_addr then
-					tcp_rx_data_rd_addr <= tcp_rx_data_rd_addr + 1;
-				end if;
-			end if;
-			if tcp_rx_data_we = '1' then 
-				tcp_rx_data_wr_addr <= tcp_rx_data_wr_addr + 1;
-			end if;
-		end if;
-	end process;
-
-	tcp_rx_data_wr_addr_m1 <= tcp_rx_data_wr_addr - 1;
-	tcp_rx_data_we <= '1' when (packet_handler_next_state = CHECK_TCP_PSH_ACK_PACKET4) else '0';
-
-	TCP_RX_DATA_RAM : TDP_RAM
-		Generic Map (	G_DATA_A_SIZE 	=> rx_packet_rd_data'length,
-							G_ADDR_A_SIZE	=> tcp_rx_data_wr_addr'length,
-							G_RELATION		=> 0, --log2(SIZE_A/SIZE_B)
-							G_INIT_ZERO		=> true,
-							G_INIT_FILE		=> "")
-		Port Map ( CLK_A_IN 	=> CLK_IN,
-				 WE_A_IN 		=> tcp_rx_data_we,
-				 ADDR_A_IN 		=> slv(tcp_rx_data_wr_addr),
-				 DATA_A_IN		=> rx_packet_rd_data,
-				 DATA_A_OUT		=> open,
-				 CLK_B_IN 		=> CLK_IN,
-				 WE_B_IN 		=> '0',
-				 ADDR_B_IN 		=> slv(tcp_rx_data_rd_addr),
-				 DATA_B_IN 		=> X"00",
-				 DATA_B_OUT 	=> tcp_rx_data_rd_data);
+	TCP_RX_FIFO : TCP_FIFO
+	  PORT MAP (
+		 clk 				=> CLK_IN,
+		 din 				=> rx_packet_rd_data,
+		 wr_en 			=> tcp_rx_data_we,
+		 rd_en 			=> tcp_data_rd_en,
+		 dout 			=> tcp_rx_data_rd_data,
+		 full 			=> open,
+		 empty 			=> tcp_rd_data_available,
+		 data_count 	=> tcp_rd_data_count);
 
 	--- Network Stats ---
 	

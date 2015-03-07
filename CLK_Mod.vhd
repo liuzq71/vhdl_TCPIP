@@ -29,36 +29,31 @@ use UNISIM.VComponents.all;
 
 entity clk_mod is
     Port ( CLK_100MHz_IN 	: in  STD_LOGIC;
-           CLK_25Mhz_OUT 	: out STD_LOGIC;
 			  CLK_100Mhz_OUT	: out STD_LOGIC);
 end clk_mod;
 
 architecture Behavioral of clk_mod is
 
-signal clk_1x, clk_1x_bufg :std_logic:='0';
-signal clk0_2xout_tmp, clk0_2xout_bufg, clk0_div2out, clk0_div2out_bufg :std_logic:='0';
-signal clk0_1xout_tmp, clk0_1xout_bufg :std_logic:='0';
+signal clk_1x, clk_1x_bufg 				: std_logic:='0';
+signal clk0_2xout_tmp, clk0_2xout_bufg : std_logic:='0';
+signal clk0_1xout_tmp, clk0_1xout_bufg : std_logic:='0';
 
 begin
 
 	CLK_100Mhz_OUT <= clk0_1xout_bufg;
-	CLK_25Mhz_OUT <= clk0_div2out_bufg;
 
  	U01_BUFG : BUFG
     port map (I => clk0_1xout_tmp, O => clk0_1xout_bufg);
-	
  	U0_BUFG : BUFG
     port map (I => clk0_2xout_tmp, O => clk0_2xout_bufg);
-	U02_BUFG : BUFG
-    port map (I => clk0_div2out, O => clk0_div2out_bufg);
 
 	DCM_SP_inst : DCM_SP
    generic map (
       CLKDV_DIVIDE => 4.0,                   -- CLKDV divide value (1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,9,10,11,12,13,14,15,16).
-      CLKFX_DIVIDE => 10,                     -- Divide value on CLKFX outputs - D - (1-32)
-      CLKFX_MULTIPLY => 11,                   -- Multiply value on CLKFX outputs - M - (2-32)
+      CLKFX_DIVIDE => 2,                     -- Divide value on CLKFX outputs - D - (1-32)
+      CLKFX_MULTIPLY => 2,                   -- Multiply value on CLKFX outputs - M - (2-32)
       CLKIN_DIVIDE_BY_2 => FALSE,            -- CLKIN divide by two (TRUE/FALSE)
-      CLKIN_PERIOD => 20.0,                  -- Input clock period specified in nS
+      CLKIN_PERIOD => 10.0,                  -- Input clock period specified in nS
       CLKOUT_PHASE_SHIFT => "NONE",          -- Output phase shift (NONE, FIXED, VARIABLE)
       CLK_FEEDBACK => "2X",                  -- Feedback source (NONE, 1X, 2X)
       DESKEW_ADJUST => "SYSTEM_SYNCHRONOUS", -- SYSTEM_SYNCHRNOUS or SOURCE_SYNCHRONOUS
@@ -73,7 +68,7 @@ begin
    port map (
       CLK2X180 => open, 				-- 1-bit output: 2X clock frequency, 180 degree clock output
       CLK90 	=> open,       		-- 1-bit output: 90 degree clock output
-      CLKDV 	=> clk0_div2out,     -- 1-bit output: Divided clock output
+      CLKDV 	=> open,     -- 1-bit output: Divided clock output
       CLKFX 	=> clk0_1xout_tmp,   -- 1-bit output: Digital Frequency Synthesizer output (DFS)
       CLKFX180 => open, 				-- 1-bit output: 180 degree CLKFX output
       LOCKED 	=> open,     			-- 1-bit output: DCM_SP Lock Output

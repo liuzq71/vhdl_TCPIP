@@ -40,11 +40,11 @@ architecture Behavioral of led_mod is
 
 subtype slv is std_logic_vector;
 
-constant C_clk_div_1sec 		: std_logic_vector(27 downto 0) := X"17D7840";
+constant C_clk_div_1sec 		: std_logic_vector(27 downto 0) := X"5F5E100";
 constant C_clk_div_1sec_test	: std_logic_vector(27 downto 0) := X"0000008";
-constant C_heartbeat_first		: std_logic_vector(27 downto 0) := X"08583B0";
-constant C_heartbeat_second	: std_logic_vector(27 downto 0) := X"05F5E10";
-constant C_heartbeat_third		: std_logic_vector(27 downto 0) := X"04C4B40";
+constant C_heartbeat_first		: std_logic_vector(27 downto 0) := X"20583B0";
+constant C_heartbeat_second	: std_logic_vector(27 downto 0) := X"16F5E10";
+constant C_heartbeat_third		: std_logic_vector(27 downto 0) := X"10C4B40";
 
 -- State info
 constant C_off_state 			: std_logic_vector(2 downto 0) := "000";

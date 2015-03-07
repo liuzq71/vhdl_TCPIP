@@ -21,6 +21,8 @@
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
+use work.CommonPckg.all;
+use work.SdCardPckg.all;
 
 library UNISIM;
 use UNISIM.VComponents.all;
@@ -41,19 +43,18 @@ entity vault is
 				INT			: in STD_LOGIC;
 				RESET			: out STD_LOGIC;
 				
-				SD_MISO		: out  STD_LOGIC;
-				SD_MOSI		: out  STD_LOGIC;
-				SD_CLK		: out  STD_LOGIC;
-				SD_CS			: out  STD_LOGIC
+				SD_MISO_IN	: in  STD_LOGIC;
+				SD_MOSI_OUT	: out  STD_LOGIC;
+				SD_CLK_OUT	: out  STD_LOGIC;
+				SD_CS_OUT	: out  STD_LOGIC;
 				
-				);
+				IO_P8		: out STD_LOGIC_VECTOR (7 downto 0));
 end vault;
 
 architecture Behavioral of vault is
 
 	COMPONENT clk_mod
 		 Port ( CLK_100MHz_IN 	: in  STD_LOGIC;
-				  CLK_25Mhz_OUT 	: out  STD_LOGIC;
 				  CLK_100Mhz_OUT 	: out  STD_LOGIC);
 	END COMPONENT;
 	
@@ -106,10 +107,40 @@ architecture Behavioral of vault is
 			  INT_IN		: in STD_LOGIC);
 	END COMPONENT;
 
+	COMPONENT SdCardCtrl
+    generic (
+      FREQ_G          : real       := 100.0;  -- Master clock frequency (MHz).
+      INIT_SPI_FREQ_G : real       := 0.4;  -- Slow SPI clock freq. during initialization (MHz).
+      SPI_FREQ_G      : real       := 25.0;  -- Operational SPI freq. to the SD card (MHz).
+      BLOCK_SIZE_G    : natural    := 512;  -- Number of bytes in an SD card block or sector.
+      CARD_TYPE_G     : CardType_t := SD_CARD_E  -- Type of SD card connected to this controller.
+      );
+    port (
+      -- Host-side interface signals.
+      clk_i      : in  std_logic;       -- Master clock.
+      reset_i    : in  std_logic                     := NO;  -- active-high, synchronous  reset.
+      rd_i       : in  std_logic                     := NO;  -- active-high read block request.
+      wr_i       : in  std_logic                     := NO;  -- active-high write block request.
+      continue_i : in  std_logic                     := NO;  -- If true, inc address and continue R/W.
+      addr_i     : in  std_logic_vector(31 downto 0) := x"00000000";  -- Block address.
+      data_i     : in  std_logic_vector(7 downto 0)  := x"00";  -- Data to write to block.
+      data_o     : out std_logic_vector(7 downto 0)  := x"00";  -- Data read from block.
+      busy_o     : out std_logic;  -- High when controller is busy performing some operation.
+      hndShk_i   : in  std_logic;  -- High when host has data to give or has taken data.
+      hndShk_o   : out std_logic;  -- High when controller has taken data or has data to give.
+      error_o    : out std_logic_vector(15 downto 0) := (others => NO);
+      -- I/O signals to the external SD card.
+      cs_bo      : out std_logic                     := HI;  -- Active-low chip-select.
+      sclk_o     : out std_logic                     := LO;  -- Serial clock to SD card.
+      mosi_o     : out std_logic                     := HI;  -- Serial data output to SD card.
+      miso_i     : in  std_logic                     := ZERO;  -- Serial data input from SD card.
+		state_debug_o	: out std_logic_vector(4 downto 0)
+      );
+	END COMPONENT;
+
 subtype slv is std_logic_vector;
 
-signal clk_25MHz, clk_100MHz : std_logic;
-signal clk_1hz : std_logic;
+signal clk_100MHz, clk_1hz : std_logic;
 
 signal char_addr, font_addr	: std_logic_vector(11 downto 0);
 signal char_data, font_data	: std_logic_vector(7 downto 0);
@@ -139,25 +170,40 @@ signal eth_command_en, eth_command_cmplt : std_logic;
 signal sdi_buf, sdo_buf, sclk_buf, sclk_buf_n, sclk_oddr, cs_buf : std_logic;
 
 signal clk_div_counter : unsigned(7 downto 0);
-signal tcp_rd_en : std_logic;
+signal tcp_rd_en, tcp_rd_en_p, tcp_rd_data_avail : std_logic;
+signal check_rd_data : std_logic;
+signal tcp_data_rd : std_logic_vector(7 downto 0);
+signal tcp_data_rd_p, tcp_data_rd_pp : unsigned(7 downto 0);
+signal err_count : unsigned(15 downto 0) := (others => '0');
+signal sd_cs, sd_clk, sd_mosi, sd_miso : std_logic;
+signal busy_o, hndshk_i, hndshk_o, wr_i : std_logic;
+signal wr_counter : unsigned(11 downto 0) := (others => '0');
+signal data_i : unsigned(7 downto 0) := (others => '0');
+signal addr_i : unsigned(31 downto 0) := (others => '0');
+
+type SD_ST is (	IDLE,
+						INIT_WR,
+						WAIT_FOR_BYTE,
+						WR_BYTE0,
+						WR_BYTE1,
+						WR_BYTE2,
+						WR_BYTE3,
+						WAIT_FOR_NOT_BUSY);
+						
+signal sd_state, sd_next_state : SD_ST := IDLE;
+					
 
 begin
 	
 	clk_mod_Inst : clk_mod
 	PORT MAP ( 	CLK_100MHz_IN 	=> CLK_IN,
-					CLK_25Mhz_OUT 	=> clk_25MHz,
 					CLK_100Mhz_OUT => clk_100MHz);
 	
 --------------------------- DEBUG LOGIC ------------------------------
 	
 	LED_OUT(4 downto 2) <= (others => '0');
 	--LED_OUT(7 downto 4) <= sseg_data(15 downto 12);
-	LED_OUT(7 downto 5) <= debug_i;
-	
-	SD_MISO 	<= '0';
-	SD_MOSI 	<= '0';
-	SD_CLK 	<= '0';
-	SD_CS 	<= '0';
+	--LED_OUT(7 downto 5) <= debug_i;
 	
 	OBUF_inst_0: OBUF generic map ( DRIVE => 12, IOSTANDARD => "DEFAULT", SLEW => "FAST") port map (I => sdi_buf, O => SDO);
 	IBUF_inst_0: IBUF port map (I => SDI, O => sdo_buf);
@@ -180,12 +226,12 @@ begin
 
 	sseg_inst : sseg
 	PORT MAP (	
-		CLK    	=> clk_25MHz,
+		CLK    	=> clk_100MHz,
 		VAL_IN 	=> sseg_data,
 		SSEG_OUT	=> SSEG_OUT,
 		AN_OUT   => SSEG_EN_OUT);
 	
-	process(clk_25MHz)
+	process(clk_100MHz)
 	begin
 		if rising_edge(clk_100MHz) then
 			debounce_count <= debounce_count + 1;
@@ -194,7 +240,7 @@ begin
 				buttons <= BUTTON_IN;
 			end if;
 			for i in 0 to 5 loop
-				if buttons_prev(i) = '0' and buttons(i) = '1' then
+				if buttons_prev(i) = '1' and buttons(i) = '0' then
 					buttons_edge(i) <= '1';
 				else
 					buttons_edge(i) <= '0';
@@ -206,12 +252,11 @@ begin
 --------------------------- UI I/O ------------------------------
 
 	led_mod_inst : led_mod
-    Port Map ( CLK_IN 				=> clk_25MHz,
+    Port Map ( CLK_IN 				=> clk_100MHz,
 					LED_STATE_IN 		=> "001",
 					ERROR_CODE_IN		=> SW_IN(4 downto 0),
 					ERROR_CODE_EN_IN	=> '0',
 					LEDS_OUT 			=> LED_OUT(1 downto 0),
-					
 					CLK_1HZ_OUT			=> clk_1hz);
 				
 ------------------------- Ethernet I/O --------------------------------
@@ -234,12 +279,12 @@ begin
 					  DATA_OUT 	=> data_bus,
 					  
 					  DEBUG_IN	=> debug_i,
-					  DEBUG_OUT	=> sseg_data,
+					  DEBUG_OUT	=> open,
 					  
 					  -- TCP Connection Interface
-					  TCP_RD_DATA_AVAIL_OUT => open,
+					  TCP_RD_DATA_AVAIL_OUT => tcp_rd_data_avail,
 					  TCP_RD_DATA_EN_IN 		=> tcp_rd_en,
-					  TCP_RD_DATA_OUT 		=> open,
+					  TCP_RD_DATA_OUT 		=> tcp_data_rd,
 					  
 					  CLK_1HZ_IN	=> clk_1hz,
 					  
@@ -250,7 +295,9 @@ begin
 					  CS_OUT 	=> cs_buf,
 					  INT_IN 	=> INT);
 					  
-	process(clk_25MHz)
+	tcp_rd_en <= buttons_edge(1);
+					  
+	process(clk_100MHz)
 	begin
 		if rising_edge(clk_100MHz) then
 			if clk_div_counter = X"00" then
@@ -258,14 +305,140 @@ begin
 			else
 				clk_div_counter <= clk_div_counter - 1;
 			end if;
-			if clk_div_counter = X"00" then
-				tcp_rd_en <= '1';
+--			if clk_div_counter = X"00" and tcp_rd_data_avail = '1' then
+--				tcp_rd_en <= '1';
+--			else
+--				tcp_rd_en <= '0';
+--			end if;
+			if tcp_rd_en = '1' then
+				tcp_data_rd_p <= unsigned(tcp_data_rd);
+				tcp_data_rd_pp <= unsigned(tcp_data_rd_p);
+			end if;
+			tcp_rd_en_p <= tcp_rd_en;
+			if tcp_rd_en_p = '1' then
+				if tcp_data_rd_p /= X"00" and tcp_data_rd_pp /= X"00" then
+					check_rd_data <= '1';
+				end if;
 			else
-				tcp_rd_en <= '0';
+				check_rd_data <= '0';
+			end if;
+			if check_rd_data = '1' then
+				if tcp_data_rd_p /= (tcp_data_rd_pp + 1) then
+					err_count <= err_count + 1;
+				end if;
 			end if;
 		end if;
 	end process;
-							
+	
+	--sseg_data(15 downto 0) <= slv(err_count);
+	sseg_data(15 downto 8) <= X"00";
+	sseg_data(7 downto 0) <= slv(tcp_data_rd);
+	
+	SD_CS_OUT <= sd_cs;
+	SD_CLK_OUT <= sd_clk;
+	SD_MOSI_OUT <= sd_mosi;
+	sd_miso <= SD_MISO_IN;
+	
+	IO_P8(0) <= sd_cs;
+	IO_P8(2) <= sd_clk;
+	IO_P8(4) <= sd_mosi;
+	IO_P8(6) <= sd_miso;
+	IO_P8(1) <= busy_o;
+	IO_P8(3) <= '0';
+	IO_P8(5) <= '0';
+	IO_P8(7) <= '0';
+	
+	LED_OUT(7) <= '1' when sd_state = IDLE else '0';
+	LED_OUT(6) <= hndshk_i;
+	LED_OUT(5) <= busy_o;
+
+	wr_i <= '1' when sd_state = INIT_WR else '0';
+	hndshk_i <= '1' when sd_state = WR_BYTE1 else '0';
+					
+	SD_ST_DECODE: process (buttons_edge(2), tcp_rd_en)
+   begin
+      sd_next_state <= sd_state;  --default is to stay in current state
+      case (sd_state) is
+         when IDLE =>
+				if buttons_edge(2) = '1' and busy_o = '0' then
+					sd_next_state <= INIT_WR;
+				end if;
+			when INIT_WR =>
+				if busy_o = '1' then
+					sd_next_state <= WAIT_FOR_BYTE;
+				end if;
+			when WAIT_FOR_BYTE =>
+				if tcp_rd_en = '1' then
+					sd_next_state <= WR_BYTE0;
+				end if;
+			when WR_BYTE0 =>
+				if hndshk_o = '1' then
+					sd_next_state <= WR_BYTE1;
+				end if;
+			when WR_BYTE1 =>
+				if hndshk_o = '0' then
+					sd_next_state <= WR_BYTE2;
+				end if;
+			when WR_BYTE2 =>
+				sd_next_state <= WR_BYTE3;
+			when WR_BYTE3 =>
+				if wr_counter = X"200" then
+					sd_next_state <= WAIT_FOR_NOT_BUSY;
+				else
+					sd_next_state <= WAIT_FOR_BYTE;
+				end if;
+			when WAIT_FOR_NOT_BUSY =>
+				if busy_o = '0' then
+					sd_next_state <= INIT_WR;
+				end if;
+		end case;
+	end process;
+	
+	process(clk_100MHz)
+	begin
+		if rising_edge(clk_100MHz) then
+			sd_state <= sd_next_state;
+			if sd_state = INIT_WR then
+				wr_counter <= (others => '0');
+			elsif sd_state = WR_BYTE2 then
+				wr_counter <= wr_counter + 1;
+			end if;
+			if sd_state = WR_BYTE3 and sd_next_state = WAIT_FOR_NOT_BUSY then
+				addr_i <= addr_i + 1;
+			end if;
+		end if;
+	end process;
+									
+  SdCardCtrl_Inst : SdCardCtrl
+    generic map (
+      FREQ_G          => 100.0,  	-- Master clock frequency (MHz).
+      INIT_SPI_FREQ_G => 0.1,  		-- Slow SPI clock freq. during initialization (MHz).
+      SPI_FREQ_G      => 10.0,  		-- Operational SPI freq. to the SD card (MHz).
+      BLOCK_SIZE_G    => 512,  		-- Number of bytes in an SD card block or sector.
+      CARD_TYPE_G     => SD_CARD_E  -- Type of SD card connected to this controller.
+      )
+    port map (
+      
+		-- Host-side interface signals.
+      clk_i      => clk_100MHz,
+      reset_i    => buttons_edge(0),
+      rd_i       => '0',
+      wr_i       => wr_i,
+      continue_i => '0',
+      addr_i     => slv(addr_i),
+      data_i     => tcp_data_rd,
+      data_o     => open,
+      busy_o     => busy_o,
+      hndShk_i   => hndshk_i,
+      hndShk_o   => hndshk_o,
+      error_o    => open,
+		
+      -- I/O signals to the external SD card.
+      cs_bo		  => sd_cs,
+      sclk_o     => sd_clk,
+      mosi_o     => sd_mosi,
+      miso_i     => sd_miso,
+		state_debug_o	=> open); --leds(4 downto 0));
 
 end Behavioral;
 
