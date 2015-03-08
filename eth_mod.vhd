@@ -295,8 +295,7 @@ signal rx_tcp_option_length : unsigned(7 downto 0);
 signal rx_tcp_window_shift : std_logic_vector(7 downto 0);
 signal tcp_option_addr, next_protocol_start_addr : unsigned(10 downto 0);
 signal rx_data_length, prev_rx_data_length : unsigned(15 downto 0);
-signal prev_rx_data_length1, prev_rx_data_length2, prev_rx_data_length3 : unsigned(15 downto 0);
-signal prev_rx_data_length4, prev_rx_data_length5, prev_rx_data_length6 : unsigned(15 downto 0);
+signal rx_data_start_addr : unsigned(11 downto 0);
 
 signal tcp_rx_data_we, tcp_rd_data_available, tcp_data_rd_en : std_logic := '0';
 signal tcp_rx_ram_almost_full : std_logic := '0';
@@ -609,6 +608,7 @@ begin
 	--DEBUG_OUT(11 downto 0) <= slv(rx_kbytes_sec);
 	--DEBUG_OUT(15 downto 0) <= slv(interrupt_counter);
 	--DEBUG_OUT(15 downto 0) <= slv(checksum);
+	--DEBUG_OUT(11 downto 0) <= slv(rx_data_start_addr);
 	
 	packet_definition_addr <= frame_addr when doing_tx_packet_config = '0' else slv(tx_packet_frame_addr);
 	frame_data <= packet_definition_data;
@@ -1811,7 +1811,7 @@ begin
 				rx_packet_ram_rd_addr <= next_protocol_start_addr;
 			elsif packet_handler_state = PARSE_TCP_PACKET20 then
 				rx_packet_ram_rd_addr <= tcp_option_addr;
-			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET3 then
+			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET1 then
 				rx_packet_ram_rd_addr <= "000"&X"3A";
 			elsif packet_handler_state = HANDLE_DHCP_ACK1 then
 				rx_packet_ram_rd_addr <= "000"&X"0A";
@@ -2002,6 +2002,11 @@ begin
 				rx_data_length <= rx_data_length - RESIZE(unsigned(rx_tcp_header_length), 16);
 			elsif packet_handler_state = PARSE_TCP_PACKET16 then
 				rx_data_length <= rx_data_length - RESIZE(unsigned(ip_packet_header_length), 16);
+			end if;
+			if packet_handler_state = PARSE_TCP_PACKET15 then
+				rx_data_start_addr <= RESIZE(unsigned(rx_tcp_header_length), 12);
+			elsif packet_handler_state = PARSE_TCP_PACKET16 then
+				rx_data_start_addr <= rx_data_start_addr + RESIZE(unsigned(ip_packet_header_length), 12);
 			end if;
 			if packet_handler_state = PARSE_TCP_PACKET16 then
 				rx_tcp_window_size(15 downto 8) <= rx_packet_rd_data;

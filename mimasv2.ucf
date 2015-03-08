@@ -79,14 +79,14 @@ NET "SD_CS_OUT"     		LOC = L13  | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FA
 #    NET "IO_P7[6]"            LOC = T9  | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
 #    NET "IO_P7[7]"            LOC = V9  | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
 
-    NET "IO_P8[0]"            LOC = R11   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
-    NET "IO_P8[1]"            LOC = T11   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
-    NET "IO_P8[2]"            LOC = R10   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
-    NET "IO_P8[3]"            LOC = T10   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
-    NET "IO_P8[4]"            LOC = U13   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
-    NET "IO_P8[5]"            LOC = V13   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
-    NET "IO_P8[6]"            LOC = U11   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
-    NET "IO_P8[7]"            LOC = V11   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
+#    NET "IO_P8[0]"            LOC = R11   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
+#    NET "IO_P8[1]"            LOC = T11   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
+#    NET "IO_P8[2]"            LOC = R10   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
+#    NET "IO_P8[3]"            LOC = T10   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
+#    NET "IO_P8[4]"            LOC = U13   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
+#    NET "IO_P8[5]"            LOC = V13   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
+#    NET "IO_P8[6]"            LOC = U11   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
+#    NET "IO_P8[7]"            LOC = V11   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
 
 #NET "RX_IN"            LOC = H17   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
 #NET "TX_OUT"            LOC = H18   | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = FAST ;
