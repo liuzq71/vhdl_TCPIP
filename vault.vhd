@@ -91,9 +91,13 @@ architecture Behavioral of vault is
 			  DEBUG_OUT	: out  STD_LOGIC_VECTOR (15 downto 0);
 			  
            -- TCP Connection Interface
-			  TCP_RD_DATA_AVAIL_OUT : out STD_LOGIC;
-			  TCP_RD_DATA_EN_IN 		: in STD_LOGIC;
-			  TCP_RD_DATA_OUT 		: out STD_LOGIC_VECTOR (7 downto 0);
+			  TCP_RD_DATA_AVAIL_OUT 	: out STD_LOGIC;
+			  TCP_RD_DATA_EN_IN 			: in STD_LOGIC;
+			  TCP_RD_DATA_OUT 			: out STD_LOGIC_VECTOR (7 downto 0);
+			  TCP_WR_DATA_POSSIBLE_OUT	: out STD_LOGIC;
+			  TCP_WR_DATA_EN_IN 			: in STD_LOGIC;
+			  TCP_WR_DATA_FLUSH_IN		: in STD_LOGIC;
+			  TCP_WR_DATA_IN 				: in STD_LOGIC_VECTOR (7 downto 0);
 			  
 			  CLK_1HZ_IN	: in STD_LOGIC;
 			  
@@ -175,6 +179,7 @@ signal clk_div_counter : unsigned(7 downto 0);
 signal tcp_rd_en, tcp_rd_en_p, tcp_rd_data_avail : std_logic;
 signal check_rd_data : std_logic;
 signal tcp_data_rd : std_logic_vector(7 downto 0);
+signal tcp_data_wr : unsigned(7 downto 0) := X"00";
 signal tcp_data_rd_p, tcp_data_rd_pp : unsigned(7 downto 0);
 signal err_count : unsigned(15 downto 0) := (others => '0');
 signal sd_cs, sd_clk, sd_mosi, sd_miso : std_logic;
@@ -249,7 +254,7 @@ begin
 ------------------------- Ethernet I/O --------------------------------
 
 	RESET <= '0';
-	debug_i <= buttons_edge(2)&buttons_edge(1)&buttons_edge(0);
+	debug_i <= buttons(2)&buttons(1)&buttons(0);
 	
 	OBUF_inst_0: OBUF generic map ( DRIVE => 12, IOSTANDARD => "DEFAULT", SLEW => "FAST") port map (I => sdi_buf, O => SDO);
 	IBUF_inst_0: IBUF port map (I => SDI, O => sdo_buf);
@@ -288,9 +293,13 @@ begin
 					  DEBUG_OUT	=> debug_o,
 					  
 					  -- TCP Connection Interface
-					  TCP_RD_DATA_AVAIL_OUT => tcp_rd_data_avail,
-					  TCP_RD_DATA_EN_IN 		=> tcp_rd_en,
-					  TCP_RD_DATA_OUT 		=> tcp_data_rd,
+					  TCP_RD_DATA_AVAIL_OUT 	=> tcp_rd_data_avail,
+					  TCP_RD_DATA_EN_IN 			=> tcp_rd_en,
+					  TCP_RD_DATA_OUT 			=> tcp_data_rd,
+					  TCP_WR_DATA_POSSIBLE_OUT	=> open,
+					  TCP_WR_DATA_EN_IN 			=> buttons_edge(0),
+					  TCP_WR_DATA_FLUSH_IN		=> buttons_edge(1),
+					  TCP_WR_DATA_IN 				=> slv(tcp_data_wr),
 					  
 					  CLK_1HZ_IN	=> clk_1hz,
 					  
@@ -307,8 +316,17 @@ begin
 	FPGA_TEST: if C_TEST_W_FPGA = true generate
 	
 		LED_OUT(7 downto 4) <= sseg_data(15 downto 12);
-		sseg_data(15 downto 0) <= slv(err_count);
-		--sseg_data(15 downto 0) <= slv(debug_o);
+		--sseg_data(15 downto 0) <= slv(err_count);
+		sseg_data(15 downto 0) <= slv(debug_o);
+
+		process(clk_100MHz)
+		begin
+			if rising_edge(clk_100MHz) then
+				if buttons_edge(0) = '1' then
+					tcp_data_wr <= tcp_data_wr + 1;
+				end if;
+			end if;
+		end process;
 
 		process(clk_100MHz)
 		begin
@@ -359,12 +377,12 @@ begin
 		tcp_rd_en <= '1' when sd_state = WAIT_FOR_BYTE else '0';
 		hndshk_i <= '1' when sd_state = WR_BYTE1 else '0';
 						
-		SD_ST_DECODE: process (buttons_edge(2), tcp_rd_en)
+		SD_ST_DECODE: process (buttons_edge(3), tcp_rd_en)
 		begin
 			sd_next_state <= sd_state;  --default is to stay in current state
 			case (sd_state) is
 				when IDLE =>
-					if buttons_edge(2) = '1' and busy_o = '0' then
+					if buttons_edge(4) = '1' and busy_o = '0' then
 						sd_next_state <= INIT_WR;
 					end if;
 				when INIT_WR =>
@@ -427,7 +445,7 @@ begin
 			
 			-- Host-side interface signals.
 			clk_i      => clk_100MHz,
-			reset_i    => buttons_edge(0),
+			reset_i    => buttons_edge(3),
 			rd_i       => '0',
 			wr_i       => wr_i,
 			continue_i => '0',

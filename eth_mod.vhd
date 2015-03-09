@@ -14,7 +14,7 @@
 --
 -- Revision: 
 -- Revision 0.01 - File Created
--- Additional Comments: 
+-- Additional Comments: TODO - TCP CLOSE CONNECTION!
 --
 ----------------------------------------------------------------------------------
 library IEEE;
@@ -45,9 +45,13 @@ entity eth_mod is
 			  DEBUG_OUT				: out  STD_LOGIC_VECTOR (15 downto 0);
 			  
            -- TCP Connection Interface
-			  TCP_RD_DATA_AVAIL_OUT : out STD_LOGIC;
-			  TCP_RD_DATA_EN_IN 		: in STD_LOGIC;
-			  TCP_RD_DATA_OUT 		: out STD_LOGIC_VECTOR (7 downto 0);
+			  TCP_RD_DATA_AVAIL_OUT 	: out STD_LOGIC;
+			  TCP_RD_DATA_EN_IN 			: in STD_LOGIC;
+			  TCP_RD_DATA_OUT 			: out STD_LOGIC_VECTOR (7 downto 0);
+			  TCP_WR_DATA_POSSIBLE_OUT	: out STD_LOGIC;
+			  TCP_WR_DATA_EN_IN 			: in STD_LOGIC;
+			  TCP_WR_DATA_FLUSH_IN		: in STD_LOGIC;
+			  TCP_WR_DATA_IN 				: in STD_LOGIC_VECTOR (7 downto 0);
            
 			  CLK_1HZ_IN	: in STD_LOGIC;
 			  
@@ -177,6 +181,7 @@ constant C_DHCP_Dest_Port			: std_logic_vector(15 downto 0) := X"0044";
 constant C_dhcp_magic_cookie		: std_logic_vector(31 downto 0) := X"63825363";
 constant C_tcp_syn_flags			: std_logic_vector(7 downto 0) := X"02";
 constant C_tcp_ack_flags			: std_logic_vector(7 downto 0) := X"10";
+constant C_tcp_psh_ack_flags		: std_logic_vector(7 downto 0) := X"18";
 
 constant C_ICMP_Ping_Length 		: std_logic_vector(15 downto 0) := X"0054";
 constant C_ARP_Request 				: std_logic_vector(7 downto 0) := X"01";
@@ -220,6 +225,7 @@ signal tx_packet_ram_we_addr, tx_packet_ram_rd_addr : unsigned(10 downto 0) := (
 signal tx_packet_ram_we_addr_buf : unsigned(10 downto 0) := (others => '0');
 signal tx_packet_rd_data, tx_packet_ram_data : std_logic_vector(7 downto 0);
 signal tx_packet_rd_data2 : std_logic_vector(7 downto 0);
+signal handle_tx_packet : std_logic := '0';
 
 signal ip_addr  		: std_logic_vector(31 downto 0) := X"C0A80166"; 		-- 192.168.1.102
 signal mac_addr 		: std_logic_vector(47 downto 0) := X"8066F23D547A";
@@ -290,10 +296,11 @@ signal tcp_ip_identification : unsigned(15 downto 0);
 
 signal rx_tcp_source_port, rx_tcp_dest_port : std_logic_vector(15 downto 0) := (others => '0');
 signal rx_tcp_seq_number, rx_tcp_ack_number : std_logic_vector(31 downto 0) := (others => '0');
+signal rx_tcp_window_size_shifted : std_logic_vector(31 downto 0) := (others => '0'); 
 signal rx_tcp_window_size, rx_tcp_checksum : std_logic_vector(15 downto 0) := (others => '0');
 signal rx_tcp_flags, rx_tcp_option, rx_tcp_header_length : std_logic_vector(7 downto 0) := (others => '0');
 signal rx_tcp_option_length : unsigned(7 downto 0);
-signal rx_tcp_window_shift : std_logic_vector(7 downto 0);
+signal rx_tcp_window_shift : std_logic_vector(3 downto 0);
 signal tcp_option_addr, next_protocol_start_addr : unsigned(10 downto 0);
 signal rx_data_length, prev_rx_data_length : unsigned(15 downto 0);
 signal rx_data_start_addr : unsigned(10 downto 0);
@@ -301,9 +308,14 @@ signal resend_ack_packet : std_logic := '0';
 
 signal tcp_rx_data_we, tcp_rd_data_available, tcp_data_rd_en : std_logic := '0';
 signal tcp_rx_ram_almost_full : std_logic := '0';
-signal tcp_rd_data_count 		: std_logic_vector(11 downto 0) := (others => '0');
-signal tcp_rx_data 				: unsigned(7 downto 0) := (others => '0');
-signal tcp_rx_data_rd_data 	: std_logic_vector(7 downto 0) := (others => '0');
+signal tcp_rd_data_count, tcp_wr_data_count 	: std_logic_vector(11 downto 0) := (others => '0');
+signal tcp_rx_data 									: unsigned(7 downto 0) := (others => '0');
+signal tcp_rx_data_rd_data 						: std_logic_vector(7 downto 0) := (others => '0');
+
+signal tcp_wr_data_fifo_full, tcp_wr_data_en, tcp_tx_data_rd : std_logic := '0';
+signal tcp_wr_data_flush, tcp_data_flush_waiting : std_logic := '0';
+signal tcp_wr_data, tcp_tx_data : std_logic_vector(7 downto 0) := (others => '0');
+signal tx_bytes_to_send, tx_total_packet_length : unsigned(11 downto 0) := (others => '0');
 
 signal clk_1hz, clk_1hz_prev : std_logic := '0';
 signal init_enc28j60_waiting, dhcp_connect_waiting, tcp_connect_waiting : std_logic := '0';
@@ -533,6 +545,10 @@ type PACKET_HANDLER_ST is (	IDLE,
 										TRIGGER_TCP_ACK2,
 										TRIGGER_TCP_ACK3,
 										RESEND_ACK,
+										TRIGGER_TCP_PSH_ACK0,
+										TRIGGER_TCP_PSH_ACK1,
+										
+										
 										COMPLETE
 									);
 										
@@ -580,7 +596,8 @@ begin
 	--DEBUG_OUT <= slv(rx_data_length);
 	--DEBUG_OUT <= udp_source_port when DEBUG_IN = '0' else udp_dest_port;
 	--DEBUG_OUT <= rx_tcp_source_port when DEBUG_IN = '0' else rx_tcp_dest_port;
-	--DEBUG_OUT <= rx_tcp_window_size when DEBUG_IN = '0' else rx_tcp_checksum;
+	--DEBUG_OUT <= rx_tcp_window_size when DEBUG_IN(0) = '0' else X"000"&rx_tcp_window_shift;
+	DEBUG_OUT <= rx_tcp_window_size_shifted(31 downto 16) when DEBUG_IN(0) = '0' else rx_tcp_window_size_shifted(15 downto 0);
 	--DEBUG_OUT(11 downto 0) <= slv(window_size);
 	--DEBUG_OUT(7 downto 0) <= slv(rx_tcp_option_length);
 	--DEBUG_OUT <= "00000"&slv(tcp_option_addr);
@@ -609,7 +626,7 @@ begin
 	--DEBUG_OUT(7 downto 0) <= X"0"&"0"&debug_rx_flag2&debug_rx_flag1&debug_rx_flag;
 	--DEBUG_OUT(7 downto 0) <= slv(num_packets);
 	--DEBUG_OUT(11 downto 0) <= slv(rx_kbytes_sec);
-	DEBUG_OUT(15 downto 0) <= slv(interrupt_counter);
+	--DEBUG_OUT(15 downto 0) <= slv(interrupt_counter);
 	--DEBUG_OUT(15 downto 0) <= slv(checksum);
 	--DEBUG_OUT(10 downto 0) <= slv(rx_data_start_addr);
 	
@@ -935,14 +952,11 @@ begin
 			elsif eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				tcp_connect_waiting <= '0';
 			end if;
-			
-			-- TODO remove
-			if DEBUG_IN(0) = '1' then
-				debug0_waiting <= '1';
-			elsif eth_state = HANDLE_TX_TRANSMIT15 then
-				debug0_waiting <= '0';
+			if tcp_wr_data_flush = '1' then
+				tcp_data_flush_waiting <= '1';
+			elsif eth_state = TRIGGER_NEW_TCP_CONNECTION then -- TODO
+				tcp_data_flush_waiting <= '0';
 			end if;
-			
 		end if;
 	end process;
 	
@@ -1226,6 +1240,7 @@ begin
 
 	handle_rx_packet <= '1' when eth_state = COPY_RX_PACKET_TO_BUF6 else '0';
 	trigger_ack <= '1' when eth_state = TRIGGER_ACK_PACKET else '0';
+	handle_tx_packet <= '1' when eth_state =  else '0';
 	
 	process(CLK_IN)
    begin
@@ -1318,6 +1333,8 @@ begin
 						packet_handler_next_state <= PARSE_SOURCE_MAC0;
 					elsif trigger_ack = '1' then
 						packet_handler_next_state <= TRIGGER_TCP_ACK0;
+					elsif handle_tx_packet = '1' then
+						packet_handler_next_state <= TRIGGER_TCP_PSH_ACK0;
 					end if;
 				end if;
 			when PARSE_SOURCE_MAC0 =>
@@ -1757,6 +1774,11 @@ begin
 			when RESEND_ACK =>
 				packet_handler_next_state <= COMPLETE;
 			
+			when TRIGGER_TCP_PSH_ACK0 =>
+				packet_handler_next_state <= TRIGGER_TCP_PSH_ACK1;
+			when TRIGGER_TCP_PSH_ACK1 =>										-- Increment sequence number
+				packet_handler_next_state <= TRIGGER_TCP_PSH_ACK2; 
+			
 			when COMPLETE =>
 				packet_handler_next_state <= IDLE;
 				
@@ -2029,7 +2051,7 @@ begin
 				rx_tcp_checksum(7 downto 0) <= rx_packet_rd_data;
 			end if;
 			if packet_handler_state = PARSE_TCP_PACKET19 then
-				tcp_option_addr <= rx_packet_ram_rd_addr + "00000000010"; -- skup 2 blanks after checksum
+				tcp_option_addr <= rx_packet_ram_rd_addr + "00000000010"; -- skip 2 blanks after checksum
 			elsif packet_handler_state = PARSE_TCP_PACKET26 then
 				tcp_option_addr <= tcp_option_addr + 1;
 			elsif packet_handler_state = PARSE_TCP_PACKET27 then
@@ -2042,10 +2064,29 @@ begin
 				rx_tcp_option_length <= unsigned(rx_packet_rd_data);
 			end if;
 			if packet_handler_state = PARSE_TCP_PACKET24 then
-				rx_tcp_window_shift <= rx_packet_rd_data;
+				rx_tcp_window_shift <= rx_packet_rd_data(3 downto 0);
 			end if;
 		end if;
 	end process;
+	
+	-- TODO Could disable window shift via linux kernel..?
+	with rx_tcp_window_shift select
+		rx_tcp_window_size_shifted <= "0000000000000000"&rx_tcp_window_size when X"0",
+												"000000000000000"&rx_tcp_window_size&"0" when X"1",
+												"00000000000000"&rx_tcp_window_size&"00" when X"2",
+												"0000000000000"&rx_tcp_window_size&"000" when X"3",
+												"000000000000"&rx_tcp_window_size&"0000" when X"4",
+												"00000000000"&rx_tcp_window_size&"00000" when X"5",
+												"0000000000"&rx_tcp_window_size&"000000" when X"6",
+												"000000000"&rx_tcp_window_size&"0000000" when X"7",
+												"00000000"&rx_tcp_window_size&"00000000" when X"8",
+												"0000000"&rx_tcp_window_size&"000000000" when X"9",
+												"000000"&rx_tcp_window_size&"0000000000" when X"A",
+												"00000"&rx_tcp_window_size&"00000000000" when X"B",
+												"0000"&rx_tcp_window_size&"000000000000" when X"C",
+												"000"&rx_tcp_window_size&"0000000000000" when X"D",
+												"00"&rx_tcp_window_size&"00000000000000" when X"E",
+												"0"&rx_tcp_window_size&"000000000000000" when others;
 
 	DHCP_PROC: process(CLK_IN)
    begin
@@ -2320,6 +2361,10 @@ begin
 							X"00"															when "101"&X"2", -- Load initial checksum value
 							slv(tcp_ip_identification(7 downto 0))				when "101"&X"3",
 							slv(tcp_ip_identification(15 downto 8))			when "101"&X"4",
+																							when "101"&X"5", -- Data packet length + headers
+																							when "101"&X"6", -- Data packet length + headers
+																							when "101"&X"7", -- TX Data
+																							when "101"&X"8", -- Set checksum length to tx data length
 							X"00"															when others;
 							
 	tcp_sequence_number_p1 <= tcp_sequence_number + 1;
@@ -2327,7 +2372,7 @@ begin
 	RANDOM_VALS_PROC: process(CLK_IN)
 	begin
 		if rising_edge(CLK_IN) then
-			ip_identification <= lfsr_val(15 downto 0);			-- TODO
+			ip_identification <= lfsr_val(15 downto 0);			-- TODO True random?
 			if tx_packet_state = SET_NEW_TRANSACTION_ID then
 				dhcp_transaction_id <= lfsr_val;
 			end if;
@@ -2355,6 +2400,8 @@ begin
 				tcp_flags <= C_tcp_syn_flags;
 			elsif packet_handler_state = TRIGGER_TCP_ACK0 then
 				tcp_flags <= C_tcp_ack_flags;
+			elsif packet_handler_state = TRIGGER_TCP_PSH_ACK0 then
+				tcp_flags <= C_tcp_psh_ack_flags;
 			end if;
 			if packet_handler_state = TRIGGER_TCP_ACK0 then
 				window_size <= X"FFF" - unsigned(tcp_rd_data_count);
@@ -2372,6 +2419,16 @@ begin
 				tcp_connection_active <= '1';
 			elsif tx_packet_state = TCP_CONNECTION_CLOSED then
 				tcp_connection_active <= '0';
+			end if;
+			if packet_handler_state = TRIGGER_TCP_PSH_ACK0 then
+				if unsigned(tcp_wr_data_count) > X"5B4" then
+					tx_bytes_to_send <= X"5B4";
+				else
+					tx_bytes_to_send <= unsigned(tcp_wr_data_count);
+				end if;
+			end if;
+			if packet_handler_state = TRIGGER_TCP_PSH_ACK1 then
+				tx_total_packet_length <= tx_bytes_to_send + X"030"; -- IP Header (20 Bytes) + TCP Header (28 Bytes)
 			end if;
 		end if;
 	end process;
@@ -2589,6 +2646,24 @@ begin
 		 full 			=> open,
 		 empty 			=> tcp_rd_data_available,
 		 data_count 	=> tcp_rd_data_count);
+
+--------------------- TCP TX DATA ----------------------------
+
+	TCP_WR_DATA_POSSIBLE_OUT <= not(tcp_wr_data_fifo_full);
+	tcp_wr_data_en <= TCP_WR_DATA_EN_IN;
+	tcp_wr_data <= TCP_WR_DATA_IN;
+	tcp_wr_data_flush <= TCP_WR_DATA_FLUSH_IN;
+
+	TCP_TX_FIFO : TCP_FIFO
+	  PORT MAP (
+		 clk 				=> CLK_IN,
+		 din 				=> tcp_wr_data,
+		 wr_en 			=> tcp_wr_data_en,
+		 rd_en 			=> tcp_tx_data_rd,
+		 dout 			=> tcp_tx_data,
+		 full 			=> tcp_wr_data_fifo_full,
+		 empty 			=> open,
+		 data_count 	=> tcp_wr_data_count);
 
 	--- Network Stats ---
 	
