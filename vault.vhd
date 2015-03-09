@@ -136,8 +136,8 @@ architecture Behavioral of vault is
       );
 	END COMPONENT;
 
-Constant C_TEST_W_SD_CARD 	:boolean :=true;
-Constant C_TEST_W_FPGA 		:boolean :=false;
+Constant C_TEST_W_SD_CARD 	:boolean :=false;
+Constant C_TEST_W_FPGA 		:boolean :=true;
 
 subtype slv is std_logic_vector;
 
@@ -249,7 +249,7 @@ begin
 ------------------------- Ethernet I/O --------------------------------
 
 	RESET <= '0';
-	debug_i <= buttons(2)&buttons(1)&buttons(0);
+	debug_i <= buttons_edge(2)&buttons_edge(1)&buttons_edge(0);
 	
 	OBUF_inst_0: OBUF generic map ( DRIVE => 12, IOSTANDARD => "DEFAULT", SLEW => "FAST") port map (I => sdi_buf, O => SDO);
 	IBUF_inst_0: IBUF port map (I => SDI, O => sdo_buf);
@@ -308,6 +308,7 @@ begin
 	
 		LED_OUT(7 downto 4) <= sseg_data(15 downto 12);
 		sseg_data(15 downto 0) <= slv(err_count);
+		--sseg_data(15 downto 0) <= slv(debug_o);
 
 		process(clk_100MHz)
 		begin
