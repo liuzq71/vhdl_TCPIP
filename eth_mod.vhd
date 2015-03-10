@@ -315,7 +315,7 @@ signal tcp_rx_data_rd_data 						: std_logic_vector(7 downto 0) := (others => '0
 signal tcp_wr_data_fifo_full, tcp_wr_data_en, tcp_tx_data_rd : std_logic := '0';
 signal tcp_wr_data_flush, tcp_data_flush_waiting : std_logic := '0';
 signal tcp_wr_data, tcp_tx_data : std_logic_vector(7 downto 0) := (others => '0');
-signal tx_bytes_to_send, tx_total_packet_length : unsigned(11 downto 0) := (others => '0');
+signal tx_bytes_to_send, tx_total_packet_length, tx_packet_data_counter : unsigned(11 downto 0) := (others => '0');
 
 signal clk_1hz, clk_1hz_prev : std_logic := '0';
 signal init_enc28j60_waiting, dhcp_connect_waiting, tcp_connect_waiting : std_logic := '0';
@@ -371,6 +371,7 @@ type ETH_ST is (	IDLE,
 						HANDLE_RX_INTERRUPT17,
 						CHECK_IF_ACK_WAITING,
 						TRIGGER_ACK_PACKET,
+						TRIGGER_TCP_TX,
 						COPY_RX_PACKET_TO_BUF0,
 						COPY_RX_PACKET_TO_BUF1,
 						COPY_RX_PACKET_TO_BUF2,
@@ -547,6 +548,8 @@ type PACKET_HANDLER_ST is (	IDLE,
 										RESEND_ACK,
 										TRIGGER_TCP_PSH_ACK0,
 										TRIGGER_TCP_PSH_ACK1,
+										CHECK_TCP_WINDOW_SIZE,
+										TRIGGER_TCP_PSH_ACK2,
 										
 										
 										COMPLETE
@@ -572,6 +575,7 @@ type TX_PACKET_CONFIG_ST is (	IDLE,
 										SET_RX_PACKET_ADDR_UPPER_BYTE,
 										SET_CHECKSUM_LENGTH_LSB,
 										SET_CHECKSUM_LENGTH_MSB,
+										SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH,
 										SET_CHECKSUM_START_ADDR_LSB,
 										SET_CHECKSUM_START_ADDR_MSB,
 										SET_CHECKSUM_WR_ADDR_LSB,
@@ -583,6 +587,8 @@ type TX_PACKET_CONFIG_ST is (	IDLE,
 										TRIGGER_CHECKSUM_LOAD_INITIAL_VALUE,
 										TRIG_CHECKSUM_CALC,
 										WAIT_FOR_CHECKSUM_CMPLT,
+										INIT_LOAD_TX_PACKET_DATA,
+										LOAD_TX_PACKET_DATA,
 										COMPLETE
 									);
 										
@@ -672,6 +678,8 @@ begin
 					eth_next_state <= RESEND_ACK_IN_BUFFER;
 				elsif tx_packet_ready_for_transmission = '1' then
 					eth_next_state <= PRE_TX_TRANSMIT0;
+				elsif tcp_data_flush_waiting = '1' then
+					eth_next_state <= TRIGGER_TCP_TX;
 				else
 					eth_next_state <= SERVICE_INTERRUPT0;
 				end if;
@@ -836,6 +844,11 @@ begin
 					eth_next_state <= IDLE;
 				end if;
 				
+			when TRIGGER_TCP_TX =>
+				if packet_handler_state = TRIGGER_TCP_PSH_ACK0 then
+					eth_next_state <= IDLE;
+				end if;
+				
 			when SERVICE_INTERRUPT6 =>
 				eth_next_state <= SERVICE_INTERRUPT7;
 			when SERVICE_INTERRUPT7 =>
@@ -954,7 +967,7 @@ begin
 			end if;
 			if tcp_wr_data_flush = '1' then
 				tcp_data_flush_waiting <= '1';
-			elsif eth_state = TRIGGER_NEW_TCP_CONNECTION then -- TODO
+			elsif eth_state = TRIGGER_TCP_TX then
 				tcp_data_flush_waiting <= '0';
 			end if;
 		end if;
@@ -1240,7 +1253,7 @@ begin
 
 	handle_rx_packet <= '1' when eth_state = COPY_RX_PACKET_TO_BUF6 else '0';
 	trigger_ack <= '1' when eth_state = TRIGGER_ACK_PACKET else '0';
-	handle_tx_packet <= '1' when eth_state =  else '0';
+	handle_tx_packet <= '1' when eth_state = TRIGGER_TCP_TX else '0';
 	
 	process(CLK_IN)
    begin
@@ -1776,8 +1789,20 @@ begin
 			
 			when TRIGGER_TCP_PSH_ACK0 =>
 				packet_handler_next_state <= TRIGGER_TCP_PSH_ACK1;
-			when TRIGGER_TCP_PSH_ACK1 =>										-- Increment sequence number
-				packet_handler_next_state <= TRIGGER_TCP_PSH_ACK2; 
+			when TRIGGER_TCP_PSH_ACK1 =>										 
+				if rx_tcp_window_size_shifted(31 downto 12) = X"00000" then
+					packet_handler_next_state <= CHECK_TCP_WINDOW_SIZE;
+				else
+					packet_handler_next_state <= TRIGGER_TCP_PSH_ACK2; 
+				end if;
+			when CHECK_TCP_WINDOW_SIZE =>
+				if tx_bytes_to_send > unsigned(rx_tcp_window_size_shifted(11 downto 0)) then -- server is not ready to receive data yet
+					packet_handler_next_state <= COMPLETE;
+				else
+					packet_handler_next_state <= TRIGGER_TCP_PSH_ACK2; 
+				end if;
+			when TRIGGER_TCP_PSH_ACK2 =>
+				
 			
 			when COMPLETE =>
 				packet_handler_next_state <= IDLE;
@@ -2223,6 +2248,10 @@ begin
 					tx_packet_next_state <= SET_CHECKSUM_START_VAL_MSB;
 				elsif packet_instruction = X"52" then
 					tx_packet_next_state <= TRIGGER_CHECKSUM_LOAD_INITIAL_VALUE;
+				elsif packet_instruction = X"57" then
+					tx_packet_next_state <= INIT_LOAD_TX_PACKET_DATA;
+				elsif packet_instruction = X"58" then
+					tx_packet_next_state <= SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH;
 				else
 					tx_packet_next_state <= HANDLE_PACKET_INSTRUCTION1;
 				end if;
@@ -2268,7 +2297,14 @@ begin
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			when TRIGGER_CHECKSUM_LOAD_INITIAL_VALUE =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
-				
+			
+			when INIT_LOAD_TX_PACKET_DATA =>
+				tx_packet_next_state <= LOAD_TX_PACKET_DATA;
+			when LOAD_TX_PACKET_DATA =>
+				if tx_packet_data_counter = X"000" then
+					tx_packet_next_state <= HANDLE_PACKET_INSTRUCTION1;
+				end if;
+			
 			when COMPLETE =>
 				tx_packet_next_state <= IDLE;
 				
@@ -2361,10 +2397,10 @@ begin
 							X"00"															when "101"&X"2", -- Load initial checksum value
 							slv(tcp_ip_identification(7 downto 0))				when "101"&X"3",
 							slv(tcp_ip_identification(15 downto 8))			when "101"&X"4",
-																							when "101"&X"5", -- Data packet length + headers
-																							when "101"&X"6", -- Data packet length + headers
-																							when "101"&X"7", -- TX Data
-																							when "101"&X"8", -- Set checksum length to tx data length
+							slv(tx_total_packet_length(7 downto 0))			when "101"&X"5", -- Data packet length + headers
+							slv(tx_total_packet_length(15 downto 8))			when "101"&X"6", -- Data packet length + headers
+							tcp_tx_data													when "101"&X"7", -- TX Data
+							X"00"															when "101"&X"8", -- Set checksum length to tx data length
 							X"00"															when others;
 							
 	tcp_sequence_number_p1 <= tcp_sequence_number + 1;
@@ -2388,6 +2424,8 @@ begin
 				tcp_sequence_number <= unsigned(lfsr_val);
 			elsif packet_handler_state = CHECK_TCP_SYN_ACK_PACKET2 then
 				tcp_sequence_number <= tcp_sequence_number_p1;
+			elsif packet_handler_state = TRIGGER_TCP_PSH_ACK2 then
+				tcp_sequence_number <= tcp_sequence_number + RESIZE(tx_bytes_to_send, 32);
 			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				tcp_acknowledge_number <= (others => '0');
@@ -2400,7 +2438,7 @@ begin
 				tcp_flags <= C_tcp_syn_flags;
 			elsif packet_handler_state = TRIGGER_TCP_ACK0 then
 				tcp_flags <= C_tcp_ack_flags;
-			elsif packet_handler_state = TRIGGER_TCP_PSH_ACK0 then
+			elsif packet_handler_state = TRIGGER_TCP_PSH_ACK2 then
 				tcp_flags <= C_tcp_psh_ack_flags;
 			end if;
 			if packet_handler_state = TRIGGER_TCP_ACK0 then
@@ -2498,6 +2536,8 @@ begin
 				tx_packet_ram_we_addr_buf <= "00000000000";
 			elsif tx_packet_state = HANDLE_PACKET_INSTRUCTION1 then
 				tx_packet_ram_we_addr_buf <= tx_packet_ram_we_addr_buf + 1;
+			elsif tx_packet_state = LOAD_TX_PACKET_DATA then
+				tx_packet_ram_we_addr_buf <= tx_packet_ram_we_addr_buf + 1;
 			elsif tx_packet_state = MOVE_TX_PACKET_WR_ADDR then
 				tx_packet_ram_we_addr_buf <= unsigned(checksum_wr_addr);
 			end if;
@@ -2512,17 +2552,18 @@ begin
 				rx_packet_rd2_addr(10 downto 8) <= unsigned(frame_data(2 downto 0));
 			elsif tx_packet_state = HANDLE_PACKET_INSTRUCTION1 then
 				rx_packet_rd2_addr <= rx_packet_rd2_addr + 1;
+			elsif tx_packet_state = LOAD_TX_PACKET_DATA then
+				rx_packet_rd2_addr <= rx_packet_rd2_addr + 1;
 			end if;
       end if;
    end process;
 
 	tx_packet_ram_data <= packet_data;
-	tx_packet_ram_we <= '1' when tx_packet_state = HANDLE_PACKET_INSTRUCTION1 else '0';
+	tx_packet_ram_we <= '1' when (tx_packet_state = HANDLE_PACKET_INSTRUCTION1) or (tx_packet_state = LOAD_TX_PACKET_DATA) else '0';
 	tx_packet_config_cmplt <= '1' when tx_packet_state = COMPLETE else '0';
 
 	tx_packet_ram_we_addr <= unsigned(checksum_addr) when (tx_packet_state = WAIT_FOR_CHECKSUM_CMPLT) else tx_packet_ram_we_addr_buf;
 
-	-- TODO TODO TODO Can be made smaller (only needs to be able to accommodate 1 packet (1536 btytes))
 	TX_PACKET_RAM : TDP_RAM
 		Generic Map (	G_DATA_A_SIZE 	=> tx_packet_ram_data'length,
 							G_ADDR_A_SIZE	=> tx_packet_ram_we_addr'length,
@@ -2547,11 +2588,15 @@ begin
 				checksum_count(7 downto 0) <= frame_data(7 downto 0);
 			elsif tx_packet_state = SET_CHECKSUM_LENGTH_MSB then
 				checksum_count(10 downto 8) <= frame_data(2 downto 0);
-			elsif tx_packet_state = SET_CHECKSUM_START_ADDR_LSB then
+			elsif tx_packet_state = SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH then
+				checksum_count(10 downto 0) <= tx_bytes_to_send(10 downto 0) + "000"&X"18";
+			end if;
+			if tx_packet_state = SET_CHECKSUM_START_ADDR_LSB then
 				checksum_start_addr(7 downto 0) <= frame_data(7 downto 0);
 			elsif tx_packet_state = SET_CHECKSUM_START_ADDR_MSB then
 				checksum_start_addr(10 downto 8) <= frame_data(2 downto 0);
-			elsif tx_packet_state = SET_CHECKSUM_WR_ADDR_LSB then
+			end if;
+			if tx_packet_state = SET_CHECKSUM_WR_ADDR_LSB then
 				checksum_wr_addr(7 downto 0) <= frame_data(7 downto 0);
 			elsif tx_packet_state = SET_CHECKSUM_WR_ADDR_MSB then
 				checksum_wr_addr(10 downto 8) <= frame_data(2 downto 0);
@@ -2566,6 +2611,11 @@ begin
 				checksum_set_initial_value <= '1';
 			else
 				checksum_set_initial_value <= '0';
+			end if;
+			if tx_packet_state = INIT_LOAD_TX_PACKET_DATA then
+				tx_packet_data_counter <= tx_bytes_to_send - 1;
+			else
+				tx_packet_data_counter <= tx_packet_data_counter - 1;
 			end if;
 		end if;
 	end process;
@@ -2653,6 +2703,8 @@ begin
 	tcp_wr_data_en <= TCP_WR_DATA_EN_IN;
 	tcp_wr_data <= TCP_WR_DATA_IN;
 	tcp_wr_data_flush <= TCP_WR_DATA_FLUSH_IN;
+
+	tcp_tx_data_rd <= '1' when (tx_packet_state = LOAD_TX_PACKET_DATA) else '0'; -- TODO or previous state = LOAD_TX_PACKET_DATA
 
 	TCP_TX_FIFO : TCP_FIFO
 	  PORT MAP (
