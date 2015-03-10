@@ -318,7 +318,7 @@ signal tcp_wr_data_fifo_full, tcp_wr_data_en, tcp_tx_data_rd : std_logic := '0';
 signal tcp_wr_data_flush, tcp_data_flush_waiting : std_logic := '0';
 signal tcp_wr_data, tcp_tx_data : std_logic_vector(7 downto 0) := (others => '0');
 signal tx_bytes_to_send, tx_total_packet_length, tx_packet_data_counter : unsigned(11 downto 0) := (others => '0');
-signal tx_total_packet_length_inc_mac : unsigned(11 downto 0) := (others => '0');
+signal tx_total_packet_length_inc_mac, tx_total_packet_length_checksum 	: unsigned(11 downto 0) := (others => '0');
 
 signal clk_1hz, clk_1hz_prev : std_logic := '0';
 signal init_enc28j60_waiting, dhcp_connect_waiting, tcp_connect_waiting : std_logic := '0';
@@ -553,8 +553,7 @@ type PACKET_HANDLER_ST is (	IDLE,
 										TRIGGER_TCP_PSH_ACK1,
 										CHECK_TCP_WINDOW_SIZE,
 										TRIGGER_TCP_PSH_ACK2,
-										
-										
+										TRIGGER_TCP_PSH_ACK3,
 										COMPLETE
 									);
 										
@@ -588,6 +587,7 @@ type TX_PACKET_CONFIG_ST is (	IDLE,
 										SET_NEW_TRANSACTION_ID,
 										SET_CHECKSUM_START_VAL_LSB,
 										SET_CHECKSUM_START_VAL_MSB,
+										SET_CHECKSUM_INITIAL_VALUE_TX_PACKET,
 										TRIGGER_CHECKSUM_LOAD_INITIAL_VALUE,
 										TRIG_CHECKSUM_CALC,
 										WAIT_FOR_CHECKSUM_CMPLT,
@@ -607,7 +607,7 @@ begin
 	--DEBUG_OUT <= udp_source_port when DEBUG_IN = '0' else udp_dest_port;
 	--DEBUG_OUT <= rx_tcp_source_port when DEBUG_IN = '0' else rx_tcp_dest_port;
 	--DEBUG_OUT <= rx_tcp_window_size when DEBUG_IN(0) = '0' else X"000"&rx_tcp_window_shift;
-	DEBUG_OUT <= rx_tcp_window_size_shifted(31 downto 16) when DEBUG_IN(0) = '0' else rx_tcp_window_size_shifted(15 downto 0);
+	--DEBUG_OUT <= rx_tcp_window_size_shifted(31 downto 16) when DEBUG_IN(0) = '0' else rx_tcp_window_size_shifted(15 downto 0);
 	--DEBUG_OUT(11 downto 0) <= slv(window_size);
 	--DEBUG_OUT(7 downto 0) <= slv(rx_tcp_option_length);
 	--DEBUG_OUT <= "00000"&slv(tcp_option_addr);
@@ -638,6 +638,7 @@ begin
 	--DEBUG_OUT(11 downto 0) <= slv(rx_kbytes_sec);
 	--DEBUG_OUT(15 downto 0) <= slv(interrupt_counter);
 	--DEBUG_OUT(15 downto 0) <= slv(checksum);
+	DEBUG_OUT(15 downto 0) <= slv(checksum_initial_value);
 	--DEBUG_OUT(10 downto 0) <= slv(rx_data_start_addr);
 	
 	packet_definition_addr <= frame_addr when doing_tx_packet_config = '0' else slv(tx_packet_frame_addr);
@@ -1807,9 +1808,11 @@ begin
 					packet_handler_next_state <= TRIGGER_TCP_PSH_ACK2; 
 				end if;
 			when TRIGGER_TCP_PSH_ACK2 =>
-				if tx_packet_state = INIT_TCP_TX_PACKET_METADATA then
-					packet_handler_next_state <= COMPLETE;
+				if tx_packet_state = SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH then -- wait until packet is formed before incrementing sequence number
+					packet_handler_next_state <= TRIGGER_TCP_PSH_ACK3;
 				end if;
+			when TRIGGER_TCP_PSH_ACK3 =>
+				packet_handler_next_state <= COMPLETE;
 			
 			when COMPLETE =>
 				packet_handler_next_state <= IDLE;
@@ -2263,6 +2266,8 @@ begin
 					tx_packet_next_state <= INIT_LOAD_TX_PACKET_DATA;
 				elsif packet_instruction = X"58" then
 					tx_packet_next_state <= SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH;
+				elsif packet_instruction = X"59" then
+					tx_packet_next_state <= SET_CHECKSUM_INITIAL_VALUE_TX_PACKET;
 				else
 					tx_packet_next_state <= HANDLE_PACKET_INSTRUCTION1;
 				end if;
@@ -2310,6 +2315,8 @@ begin
 			when SET_CHECKSUM_START_VAL_MSB =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			when TRIGGER_CHECKSUM_LOAD_INITIAL_VALUE =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+			when SET_CHECKSUM_INITIAL_VALUE_TX_PACKET =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			
 			when INIT_LOAD_TX_PACKET_DATA =>
@@ -2415,6 +2422,7 @@ begin
 							slv(X"0"&tx_total_packet_length(11 downto 8))	when "101"&X"6", -- Data packet length + headers
 							tcp_tx_data													when "101"&X"7", -- TX Data
 							X"00"															when "101"&X"8", -- Set checksum length to tx data length
+							X"00"															when "101"&X"9", -- Set initial checksum value to length + protocol (6)
 							X"00"															when others;
 							
 	tcp_sequence_number_p1 <= tcp_sequence_number + 1;
@@ -2438,7 +2446,7 @@ begin
 				tcp_sequence_number <= unsigned(lfsr_val);
 			elsif packet_handler_state = CHECK_TCP_SYN_ACK_PACKET2 then
 				tcp_sequence_number <= tcp_sequence_number_p1;
-			elsif packet_handler_state = TRIGGER_TCP_PSH_ACK2 then
+			elsif packet_handler_state = TRIGGER_TCP_PSH_ACK3 then
 				tcp_sequence_number <= tcp_sequence_number + RESIZE(tx_bytes_to_send, 32);
 			end if;
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
@@ -2480,10 +2488,13 @@ begin
 				end if;
 			end if;
 			if packet_handler_state = TRIGGER_TCP_PSH_ACK1 then
-				tx_total_packet_length <= tx_bytes_to_send + X"030"; -- IP Header (20 Bytes) + TCP Header (28 Bytes)
+				tx_total_packet_length <= tx_bytes_to_send + X"030"; -- IP Header length (20 Bytes) + TCP Header length (28 Bytes)
 			end if;
 			if packet_handler_state = TRIGGER_TCP_PSH_ACK1 then
-				tx_total_packet_length_inc_mac <= tx_bytes_to_send + X"03E"; -- IP Header (20 Bytes) + TCP Header (28 Bytes) + MAC data (14 bytes)
+				tx_total_packet_length_inc_mac <= tx_bytes_to_send + X"03E"; -- IP Header length (20 Bytes) + TCP Header length (28 Bytes) + MAC length (14 bytes)
+			end if;
+			if packet_handler_state = TRIGGER_TCP_PSH_ACK1 then
+				tx_total_packet_length_checksum <= tx_bytes_to_send + X"022"; --  TCP Header length (28 Bytes) + Protocol (value=6)
 			end if;
 		end if;
 	end process;
@@ -2616,7 +2627,7 @@ begin
 			elsif tx_packet_state = SET_CHECKSUM_LENGTH_MSB then
 				checksum_count(10 downto 8) <= unsigned(frame_data(2 downto 0));
 			elsif tx_packet_state = SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH then
-				checksum_count(10 downto 0) <= tx_bytes_to_send(10 downto 0) + "00000011000";
+				checksum_count(10 downto 0) <= unsigned('0'&tx_bytes_to_send(10 downto 1)) + "00000010010"; -- TODO if odd?
 			end if;
 			if tx_packet_state = SET_CHECKSUM_START_ADDR_LSB then
 				checksum_start_addr(7 downto 0) <= frame_data(7 downto 0);
@@ -2630,9 +2641,14 @@ begin
 			end if;
 			if tx_packet_state = SET_CHECKSUM_START_VAL_LSB then
 				checksum_initial_value(7 downto 0) <= frame_data(7 downto 0);
+			elsif tx_packet_state = SET_CHECKSUM_INITIAL_VALUE_TX_PACKET then
+				checksum_initial_value(7 downto 0) <= slv(tx_total_packet_length_checksum(7 downto 0));
 			end if;
 			if tx_packet_state = SET_CHECKSUM_START_VAL_MSB then
 				checksum_initial_value(15 downto 8) <= frame_data(7 downto 0);
+			elsif tx_packet_state = SET_CHECKSUM_INITIAL_VALUE_TX_PACKET then
+				checksum_initial_value(11 downto 8) <= slv(tx_total_packet_length_checksum(11 downto 8));
+				checksum_initial_value(15 downto 12) <= X"0";
 			end if;
 			if tx_packet_state = TRIGGER_CHECKSUM_LOAD_INITIAL_VALUE then
 				checksum_set_initial_value <= '1';
