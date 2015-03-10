@@ -156,12 +156,13 @@ constant C_250us : unsigned(15 downto 0) := X"61A8";
 constant C_init_cmnds_start_addr 	: std_logic_vector(7 downto 0) := X"01";
 constant C_init_cmnds_max_addr 		: std_logic_vector(7 downto 0) := X"7F";
 
-constant C_arp_reply_frame_addr 		: std_logic_vector(10 downto 0) := "000"&X"80";
-constant C_icmp_reply_frame_addr 	: std_logic_vector(10 downto 0) := "000"&X"AB";
-constant C_dhcp_discover_frame_addr : std_logic_vector(10 downto 0) := "001"&X"24";
-constant C_dhcp_request_frame_addr 	: std_logic_vector(10 downto 0) := "010"&X"86";
-constant C_arp_request_frame_addr 	: std_logic_vector(10 downto 0) := "100"&X"67";
-constant C_tcp_packet_frame_addr 	: std_logic_vector(10 downto 0) := "100"&X"92";
+constant C_arp_reply_frame_addr 			: std_logic_vector(10 downto 0) := "000"&X"80";
+constant C_icmp_reply_frame_addr 		: std_logic_vector(10 downto 0) := "000"&X"AB";
+constant C_dhcp_discover_frame_addr 	: std_logic_vector(10 downto 0) := "001"&X"24";
+constant C_dhcp_request_frame_addr 		: std_logic_vector(10 downto 0) := "010"&X"86";
+constant C_arp_request_frame_addr 		: std_logic_vector(10 downto 0) := "100"&X"67";
+constant C_tcp_packet_frame_addr 		: std_logic_vector(10 downto 0) := "100"&X"92";
+constant C_tcp_tx_packet_frame_addr 	: std_logic_vector(10 downto 0) := "100"&X"F4";
 
 constant C_arp_reply_length 		: std_logic_vector(15 downto 0) := X"002A";
 constant C_icmp_reply_length 		: std_logic_vector(15 downto 0) := X"0062";
@@ -257,7 +258,7 @@ signal total_packet_length 		: unsigned(15 downto 0);
 signal lfsr_val : std_logic_vector(31 downto 0);
 signal calc_checksum, checksum_calc_done : std_logic := '0';
 signal checksum_start_addr, checksum_addr, checksum_wr_addr : std_logic_vector(10 downto 0);
-signal checksum_count : std_logic_vector(10 downto 0);
+signal checksum_count : unsigned(10 downto 0);
 signal checksum : std_logic_vector(15 downto 0);
 signal checksum_initial_value : std_logic_vector(15 downto 0);
 signal checksum_set_initial_value : std_logic;
@@ -291,6 +292,7 @@ signal tcp_flags : std_logic_vector(7 downto 0) := (others => '0');
 signal window_size : unsigned(11 downto 0) := X"E00";
 signal requested_data_size : unsigned(11 downto 0);
 signal send_tcp_svn_packet, send_tcp_ack_packet, cancel_dhcp_connect : std_logic := '0';
+signal send_tcp_tx_packet : std_logic := '0';
 signal tcp_connection_active, close_tcp_connection, cancel_tcp_connection : std_logic := '0';
 signal tcp_ip_identification : unsigned(15 downto 0);
 
@@ -316,6 +318,7 @@ signal tcp_wr_data_fifo_full, tcp_wr_data_en, tcp_tx_data_rd : std_logic := '0';
 signal tcp_wr_data_flush, tcp_data_flush_waiting : std_logic := '0';
 signal tcp_wr_data, tcp_tx_data : std_logic_vector(7 downto 0) := (others => '0');
 signal tx_bytes_to_send, tx_total_packet_length, tx_packet_data_counter : unsigned(11 downto 0) := (others => '0');
+signal tx_total_packet_length_inc_mac : unsigned(11 downto 0) := (others => '0');
 
 signal clk_1hz, clk_1hz_prev : std_logic := '0';
 signal init_enc28j60_waiting, dhcp_connect_waiting, tcp_connect_waiting : std_logic := '0';
@@ -564,6 +567,7 @@ type TX_PACKET_CONFIG_ST is (	IDLE,
 										INIT_DHCP_DISCOVER_METADATA,
 										INIT_DHCP_REQUEST_METADATA,
 										INIT_TCP_PACKET_METADATA,
+										INIT_TCP_TX_PACKET_METADATA,
 										CANCEL_DHCP_CONNECT_ST,
 										TCP_CONNECTION_CLOSED,
 										CANCEL_TCP_CONNECTION_ST,
@@ -1319,6 +1323,7 @@ begin
 	send_icmp_reply <= '1' when packet_handler_state = TRIGGER_ICMP_PACKET_REPLY else '0';
 	send_dhcp_request <= '1' when packet_handler_state = TRIGGER_DHCP_REQUEST else '0';
 	send_tcp_ack_packet <= '1' when packet_handler_state = TRIGGER_TCP_ACK3 else '0';
+	send_tcp_tx_packet <= '1' when packet_handler_state = TRIGGER_TCP_PSH_ACK2 else '0';
 	
 	send_arp_request <= '1' when eth_state = TRIGGER_ARP_REQUEST else '0';
 	send_dhcp_discover <= '1' when eth_state = TRIGGER_DHCP_DISCOVER else '0';
@@ -1802,7 +1807,9 @@ begin
 					packet_handler_next_state <= TRIGGER_TCP_PSH_ACK2; 
 				end if;
 			when TRIGGER_TCP_PSH_ACK2 =>
-				
+				if tx_packet_state = INIT_TCP_TX_PACKET_METADATA then
+					packet_handler_next_state <= COMPLETE;
+				end if;
 			
 			when COMPLETE =>
 				packet_handler_next_state <= IDLE;
@@ -2192,6 +2199,8 @@ begin
 					tx_packet_next_state <= TCP_CONNECTION_CLOSED; -- TODO send FIN packet!
 				elsif cancel_tcp_connection = '1' then
 					tx_packet_next_state <= CANCEL_TCP_CONNECTION_ST;
+				elsif send_tcp_tx_packet = '1' then
+					tx_packet_next_state <= INIT_TCP_TX_PACKET_METADATA;
 				end if;
 			when CANCEL_DHCP_CONNECT_ST =>
 				tx_packet_next_state <= IDLE;
@@ -2210,6 +2219,8 @@ begin
 			when INIT_DHCP_REQUEST_METADATA =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			when INIT_TCP_PACKET_METADATA =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
+			when INIT_TCP_TX_PACKET_METADATA =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			when READ_PACKET_BYTE0 =>
 				tx_packet_next_state <= READ_PACKET_BYTE1;
@@ -2277,6 +2288,9 @@ begin
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			when SET_CHECKSUM_WR_ADDR_MSB =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;		
+			
+			when SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH =>
+				tx_packet_next_state <= READ_PACKET_BYTE0;
 			
 			when TRIG_CHECKSUM_CALC =>
 				tx_packet_next_state <= WAIT_FOR_CHECKSUM_CMPLT;
@@ -2398,7 +2412,7 @@ begin
 							slv(tcp_ip_identification(7 downto 0))				when "101"&X"3",
 							slv(tcp_ip_identification(15 downto 8))			when "101"&X"4",
 							slv(tx_total_packet_length(7 downto 0))			when "101"&X"5", -- Data packet length + headers
-							slv(tx_total_packet_length(15 downto 8))			when "101"&X"6", -- Data packet length + headers
+							slv(X"0"&tx_total_packet_length(11 downto 8))	when "101"&X"6", -- Data packet length + headers
 							tcp_tx_data													when "101"&X"7", -- TX Data
 							X"00"															when "101"&X"8", -- Set checksum length to tx data length
 							X"00"															when others;
@@ -2468,6 +2482,9 @@ begin
 			if packet_handler_state = TRIGGER_TCP_PSH_ACK1 then
 				tx_total_packet_length <= tx_bytes_to_send + X"030"; -- IP Header (20 Bytes) + TCP Header (28 Bytes)
 			end if;
+			if packet_handler_state = TRIGGER_TCP_PSH_ACK1 then
+				tx_total_packet_length_inc_mac <= tx_bytes_to_send + X"03E"; -- IP Header (20 Bytes) + TCP Header (28 Bytes) + MAC data (14 bytes)
+			end if;
 		end if;
 	end process;
 	
@@ -2486,6 +2503,8 @@ begin
 				tx_packet_frame_addr <= unsigned(C_dhcp_request_frame_addr);
 			elsif tx_packet_state = INIT_TCP_PACKET_METADATA then
 				tx_packet_frame_addr <= unsigned(C_tcp_packet_frame_addr);
+			elsif tx_packet_state = INIT_TCP_TX_PACKET_METADATA then
+				tx_packet_frame_addr <= unsigned(C_tcp_tx_packet_frame_addr);
 			elsif tx_packet_state = IDLE then
 				tx_packet_frame_addr <= tx_packet_frame_addr;
 			elsif tx_packet_state = READ_PACKET_BYTE0 then
@@ -2497,6 +2516,10 @@ begin
 			elsif tx_packet_state = WAIT_FOR_CHECKSUM_CMPLT then
 				tx_packet_frame_addr <= tx_packet_frame_addr;
 			elsif tx_packet_state = COMPLETE then
+				tx_packet_frame_addr <= tx_packet_frame_addr;
+			elsif tx_packet_state = INIT_LOAD_TX_PACKET_DATA then
+				tx_packet_frame_addr <= tx_packet_frame_addr;
+			elsif tx_packet_state = LOAD_TX_PACKET_DATA then
 				tx_packet_frame_addr <= tx_packet_frame_addr;
 			else
 				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
@@ -2513,6 +2536,8 @@ begin
 				tx_packet_length <= unsigned(C_dhcp_request_length);
 			elsif tx_packet_state = INIT_TCP_PACKET_METADATA then
 				tx_packet_length <= unsigned(C_tcp_packet_length);
+			elsif tx_packet_state = INIT_TCP_TX_PACKET_METADATA then
+				tx_packet_length <= RESIZE(unsigned(tx_total_packet_length_inc_mac), 16);
 			end if;
 			if tx_packet_state = INIT_ARP_REPLY_METADATA then
 				tx_packet_end_pointer <= X"1000" + unsigned(C_arp_reply_length);
@@ -2526,6 +2551,8 @@ begin
 				tx_packet_end_pointer <= X"1000" + unsigned(C_dhcp_discover_length);
 			elsif tx_packet_state = INIT_TCP_PACKET_METADATA then
 				tx_packet_end_pointer <= X"1000" + unsigned(C_tcp_packet_length);
+			elsif tx_packet_state = INIT_TCP_TX_PACKET_METADATA then
+				tx_packet_end_pointer <= X"1000" + RESIZE(unsigned(tx_total_packet_length_inc_mac), 16);
 			end if;
 			if tx_packet_state = IDLE then
 				doing_tx_packet_config <= '0';
@@ -2585,11 +2612,11 @@ begin
    begin
       if rising_edge(CLK_IN) then
 			if tx_packet_state = SET_CHECKSUM_LENGTH_LSB then
-				checksum_count(7 downto 0) <= frame_data(7 downto 0);
+				checksum_count(7 downto 0) <= unsigned(frame_data(7 downto 0));
 			elsif tx_packet_state = SET_CHECKSUM_LENGTH_MSB then
-				checksum_count(10 downto 8) <= frame_data(2 downto 0);
+				checksum_count(10 downto 8) <= unsigned(frame_data(2 downto 0));
 			elsif tx_packet_state = SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH then
-				checksum_count(10 downto 0) <= tx_bytes_to_send(10 downto 0) + "000"&X"18";
+				checksum_count(10 downto 0) <= tx_bytes_to_send(10 downto 0) + "00000011000";
 			end if;
 			if tx_packet_state = SET_CHECKSUM_START_ADDR_LSB then
 				checksum_start_addr(7 downto 0) <= frame_data(7 downto 0);
@@ -2627,7 +2654,7 @@ begin
 					RST_IN 					=> '0',
 					CHECKSUM_CALC_IN 		=> calc_checksum,
 					START_ADDR_IN 			=> checksum_start_addr,
-					COUNT_IN 				=> checksum_count,
+					COUNT_IN 				=> slv(checksum_count),
 					VALUE_IN 				=> tx_packet_rd_data2,
 					VALUE_ADDR_OUT 		=> checksum_addr,
 					CHECKSUM_INIT_IN		=> checksum_initial_value,
