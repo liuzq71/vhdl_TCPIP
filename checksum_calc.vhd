@@ -27,17 +27,18 @@ use IEEE.NUMERIC_STD.ALL;
 --use UNISIM.VComponents.all;
 
 entity checksum_calc is
-    Port ( CLK_IN 					: in  STD_LOGIC;
-           RST_IN 					: in  STD_LOGIC;
-           CHECKSUM_CALC_IN 		: in  STD_LOGIC;
-           START_ADDR_IN 			: in  STD_LOGIC_VECTOR (10 downto 0);
-           COUNT_IN 					: in  STD_LOGIC_VECTOR (10 downto 0);
-           VALUE_IN 					: in  STD_LOGIC_VECTOR (7 downto 0);
-           VALUE_ADDR_OUT 			: out STD_LOGIC_VECTOR (10 downto 0);
-			  CHECKSUM_INIT_IN		: in  STD_LOGIC_VECTOR (15 downto 0);
-			  CHECKSUM_SET_INIT_IN	: in  STD_LOGIC;
-           CHECKSUM_OUT 			: out STD_LOGIC_VECTOR (15 downto 0);
-           CHECKSUM_DONE_OUT 		: out STD_LOGIC);
+    Port ( CLK_IN 						: in  STD_LOGIC;
+           RST_IN 						: in  STD_LOGIC;
+           CHECKSUM_CALC_IN 			: in  STD_LOGIC;
+           START_ADDR_IN 				: in  STD_LOGIC_VECTOR (10 downto 0);
+           COUNT_IN 						: in  STD_LOGIC_VECTOR (10 downto 0);
+           VALUE_IN 						: in  STD_LOGIC_VECTOR (7 downto 0);
+           VALUE_ADDR_OUT 				: out STD_LOGIC_VECTOR (10 downto 0);
+			  CHECKSUM_INIT_IN			: in  STD_LOGIC_VECTOR (15 downto 0);
+			  CHECKSUM_SET_INIT_IN		: in  STD_LOGIC;
+			  CHECKSUM_ODD_LENGTH_IN	: in  STD_LOGIC;
+           CHECKSUM_OUT 				: out STD_LOGIC_VECTOR (15 downto 0);
+           CHECKSUM_DONE_OUT 			: out STD_LOGIC);
 end checksum_calc;
 
 architecture Behavioral of checksum_calc is
@@ -63,6 +64,7 @@ signal rd_addr 								: unsigned(10 downto 0);
 signal value, checksum_reg_inv			: unsigned(15 downto 0);
 signal checksum_reg							: unsigned(31 downto 0);
 signal count 									: unsigned(10 downto 0);
+signal checksum_odd 							: std_logic;
 
 begin
 
@@ -139,6 +141,9 @@ begin
 			elsif cc_state = INC_ADDR1 then
 				rd_addr <= rd_addr + 1;
 			end if;
+			if CHECKSUM_CALC_IN = '1' then
+				checksum_odd <= CHECKSUM_ODD_LENGTH_IN;
+			end if;
       end if;
    end process;
 	
@@ -149,7 +154,11 @@ begin
 				value(15 downto 8) <= unsigned(VALUE_IN);
 			end if;
 			if cc_state = LOAD_VALUE_LSB then
-				value(7 downto 0) <= unsigned(VALUE_IN);
+				if checksum_odd = '1' and count = "00000000001" then
+					value(7 downto 0) <= X"00";
+				else
+					value(7 downto 0) <= unsigned(VALUE_IN);
+				end if;
 			end if;
       end if;
    end process;

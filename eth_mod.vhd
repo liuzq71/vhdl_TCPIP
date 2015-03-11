@@ -92,17 +92,18 @@ architecture Behavioral of eth_mod is
 	END COMPONENT;
 	
 	COMPONENT checksum_calc
-    Port ( CLK_IN 					: in  STD_LOGIC;
-           RST_IN 					: in  STD_LOGIC;
-           CHECKSUM_CALC_IN 		: in  STD_LOGIC;
-           START_ADDR_IN 			: in  STD_LOGIC_VECTOR (10 downto 0);
-           COUNT_IN 					: in  STD_LOGIC_VECTOR (10 downto 0);
-           VALUE_IN 					: in  STD_LOGIC_VECTOR (7 downto 0);
-           VALUE_ADDR_OUT 			: out  STD_LOGIC_VECTOR (10 downto 0);
-			  CHECKSUM_INIT_IN		: in  STD_LOGIC_VECTOR (15 downto 0);
-			  CHECKSUM_SET_INIT_IN	: in  STD_LOGIC;
-           CHECKSUM_OUT 			: out STD_LOGIC_VECTOR (15 downto 0);
-           CHECKSUM_DONE_OUT 		: out STD_LOGIC);
+    Port ( CLK_IN 						: in  STD_LOGIC;
+           RST_IN 						: in  STD_LOGIC;
+           CHECKSUM_CALC_IN 			: in  STD_LOGIC;
+           START_ADDR_IN 				: in  STD_LOGIC_VECTOR (10 downto 0);
+           COUNT_IN 						: in  STD_LOGIC_VECTOR (10 downto 0);
+           VALUE_IN 						: in  STD_LOGIC_VECTOR (7 downto 0);
+           VALUE_ADDR_OUT 				: out  STD_LOGIC_VECTOR (10 downto 0);
+			  CHECKSUM_INIT_IN			: in  STD_LOGIC_VECTOR (15 downto 0);
+			  CHECKSUM_SET_INIT_IN		: in  STD_LOGIC;
+			  CHECKSUM_ODD_LENGTH_IN	: in  STD_LOGIC;
+           CHECKSUM_OUT 				: out STD_LOGIC_VECTOR (15 downto 0);
+           CHECKSUM_DONE_OUT 			: out STD_LOGIC);
 	END COMPONENT;
 	
 	COMPONENT TCP_FIFO
@@ -261,7 +262,7 @@ signal checksum_start_addr, checksum_addr, checksum_wr_addr : std_logic_vector(1
 signal checksum_count : unsigned(10 downto 0);
 signal checksum : std_logic_vector(15 downto 0);
 signal checksum_initial_value : std_logic_vector(15 downto 0);
-signal checksum_set_initial_value : std_logic;
+signal checksum_set_initial_value, checksum_odd_length : std_logic;
 
 signal command : std_logic_vector(3 downto 0);
 signal poll_interrupt_reg, command_waiting : std_logic;
@@ -549,6 +550,7 @@ type PACKET_HANDLER_ST is (	IDLE,
 										TRIGGER_TCP_ACK2,
 										TRIGGER_TCP_ACK3,
 										RESEND_ACK,
+										CHECK_IF_DATA_TO_SEND,
 										TRIGGER_TCP_PSH_ACK0,
 										TRIGGER_TCP_PSH_ACK1,
 										CHECK_TCP_WINDOW_SIZE,
@@ -578,7 +580,8 @@ type TX_PACKET_CONFIG_ST is (	IDLE,
 										SET_RX_PACKET_ADDR_UPPER_BYTE,
 										SET_CHECKSUM_LENGTH_LSB,
 										SET_CHECKSUM_LENGTH_MSB,
-										SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH,
+										SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH0,
+										SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH1,
 										SET_CHECKSUM_START_ADDR_LSB,
 										SET_CHECKSUM_START_ADDR_MSB,
 										SET_CHECKSUM_WR_ADDR_LSB,
@@ -850,7 +853,7 @@ begin
 				end if;
 				
 			when TRIGGER_TCP_TX =>
-				if packet_handler_state = TRIGGER_TCP_PSH_ACK0 then
+				if packet_handler_state = CHECK_IF_DATA_TO_SEND then
 					eth_next_state <= IDLE;
 				end if;
 				
@@ -1353,7 +1356,7 @@ begin
 					elsif trigger_ack = '1' then
 						packet_handler_next_state <= TRIGGER_TCP_ACK0;
 					elsif handle_tx_packet = '1' then
-						packet_handler_next_state <= TRIGGER_TCP_PSH_ACK0;
+						packet_handler_next_state <= CHECK_IF_DATA_TO_SEND;
 					end if;
 				end if;
 			when PARSE_SOURCE_MAC0 =>
@@ -1793,6 +1796,12 @@ begin
 			when RESEND_ACK =>
 				packet_handler_next_state <= COMPLETE;
 			
+			when CHECK_IF_DATA_TO_SEND =>
+				if tcp_wr_data_count /= X"000" then
+					packet_handler_next_state <= TRIGGER_TCP_PSH_ACK0;
+				else
+					packet_handler_next_state <= COMPLETE;
+				end if;
 			when TRIGGER_TCP_PSH_ACK0 =>
 				packet_handler_next_state <= TRIGGER_TCP_PSH_ACK1;
 			when TRIGGER_TCP_PSH_ACK1 =>										 
@@ -1808,7 +1817,7 @@ begin
 					packet_handler_next_state <= TRIGGER_TCP_PSH_ACK2; 
 				end if;
 			when TRIGGER_TCP_PSH_ACK2 =>
-				if tx_packet_state = SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH then -- wait until packet is formed before incrementing sequence number
+				if tx_packet_state = SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH0 then -- wait until packet is formed before incrementing sequence number
 					packet_handler_next_state <= TRIGGER_TCP_PSH_ACK3;
 				end if;
 			when TRIGGER_TCP_PSH_ACK3 =>
@@ -2265,7 +2274,7 @@ begin
 				elsif packet_instruction = X"57" then
 					tx_packet_next_state <= INIT_LOAD_TX_PACKET_DATA;
 				elsif packet_instruction = X"58" then
-					tx_packet_next_state <= SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH;
+					tx_packet_next_state <= SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH0;
 				elsif packet_instruction = X"59" then
 					tx_packet_next_state <= SET_CHECKSUM_INITIAL_VALUE_TX_PACKET;
 				else
@@ -2294,7 +2303,9 @@ begin
 			when SET_CHECKSUM_WR_ADDR_MSB =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;		
 			
-			when SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH =>
+			when SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH0 =>
+				tx_packet_next_state <= SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH1;
+			when SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH1 =>
 				tx_packet_next_state <= READ_PACKET_BYTE0;
 			
 			when TRIG_CHECKSUM_CALC =>
@@ -2532,6 +2543,8 @@ begin
 				tx_packet_frame_addr <= tx_packet_frame_addr;
 			elsif tx_packet_state = LOAD_TX_PACKET_DATA then
 				tx_packet_frame_addr <= tx_packet_frame_addr;
+			elsif tx_packet_state = SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH0 then
+				tx_packet_frame_addr <= tx_packet_frame_addr;
 			else
 				tx_packet_frame_addr <= tx_packet_frame_addr + 1;
 			end if;
@@ -2626,8 +2639,15 @@ begin
 				checksum_count(7 downto 0) <= unsigned(frame_data(7 downto 0));
 			elsif tx_packet_state = SET_CHECKSUM_LENGTH_MSB then
 				checksum_count(10 downto 8) <= unsigned(frame_data(2 downto 0));
-			elsif tx_packet_state = SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH then
-				checksum_count(10 downto 0) <= unsigned('0'&tx_bytes_to_send(10 downto 1)) + "00000010010"; -- TODO if odd?
+			elsif tx_packet_state = SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH0 then
+				checksum_count(10 downto 0) <= unsigned('0'&tx_bytes_to_send(10 downto 1)) + "00000010010";
+			elsif tx_packet_state = SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH1 then
+				checksum_count(10 downto 0) <= checksum_count(10 downto 0) + ("0000000000"&tx_bytes_to_send(0));
+			end if;
+			if tx_packet_state = SET_CHECKSUM_LENGTH_TX_PACKET_LENGTH1 then
+				checksum_odd_length <= tx_bytes_to_send(0);
+			elsif tx_packet_state = MOVE_TX_PACKET_WR_ADDR then -- clear odd flag before next checksum is calcd
+				checksum_odd_length <= '0';
 			end if;
 			if tx_packet_state = SET_CHECKSUM_START_ADDR_LSB then
 				checksum_start_addr(7 downto 0) <= frame_data(7 downto 0);
@@ -2666,17 +2686,18 @@ begin
 	calc_checksum <= '1' when tx_packet_state = TRIG_CHECKSUM_CALC else '0';
 
 	checksum_calc_mod : checksum_calc
-    Port Map ( CLK_IN 					=> CLK_IN,
-					RST_IN 					=> '0',
-					CHECKSUM_CALC_IN 		=> calc_checksum,
-					START_ADDR_IN 			=> checksum_start_addr,
-					COUNT_IN 				=> slv(checksum_count),
-					VALUE_IN 				=> tx_packet_rd_data2,
-					VALUE_ADDR_OUT 		=> checksum_addr,
-					CHECKSUM_INIT_IN		=> checksum_initial_value,
-					CHECKSUM_SET_INIT_IN	=> checksum_set_initial_value,
-					CHECKSUM_OUT 			=> checksum,
-					CHECKSUM_DONE_OUT 	=> checksum_calc_done);
+    Port Map ( CLK_IN 						=> CLK_IN,
+					RST_IN 						=> '0',
+					CHECKSUM_CALC_IN 			=> calc_checksum,
+					START_ADDR_IN 				=> checksum_start_addr,
+					COUNT_IN 					=> slv(checksum_count),
+					VALUE_IN 					=> tx_packet_rd_data2,
+					VALUE_ADDR_OUT 			=> checksum_addr,
+					CHECKSUM_INIT_IN			=> checksum_initial_value,
+					CHECKSUM_SET_INIT_IN		=> checksum_set_initial_value,
+					CHECKSUM_ODD_LENGTH_IN 	=> checksum_odd_length,
+					CHECKSUM_OUT 				=> checksum,
+					CHECKSUM_DONE_OUT 		=> checksum_calc_done);
 
 ------------------- PACKET DEFINITION ------------------------
 

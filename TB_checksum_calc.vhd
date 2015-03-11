@@ -50,6 +50,7 @@ ARCHITECTURE behavior OF TB_checksum_calc IS
          VALUE_ADDR_OUT : OUT  std_logic_vector(10 downto 0);
 			CHECKSUM_INIT_IN		: in  STD_LOGIC_VECTOR (15 downto 0);
 			CHECKSUM_SET_INIT_IN	: in  STD_LOGIC;
+			CHECKSUM_ODD_LENGTH_IN	: in  STD_LOGIC;
          CHECKSUM_OUT : OUT  std_logic_vector(15 downto 0);
          CHECKSUM_DONE_OUT : OUT  std_logic
         );
@@ -66,6 +67,7 @@ ARCHITECTURE behavior OF TB_checksum_calc IS
 
 	signal CHECKSUM_INIT_IN			: STD_LOGIC_VECTOR (15 downto 0);
 	signal CHECKSUM_SET_INIT_IN	: STD_LOGIC;
+	signal CHECKSUM_ODD_LENGTH_IN	: STD_LOGIC;
 
  	--Outputs
    signal VALUE_ADDR_OUT : std_logic_vector(10 downto 0);
@@ -88,6 +90,7 @@ BEGIN
           VALUE_ADDR_OUT => VALUE_ADDR_OUT,
 			 CHECKSUM_INIT_IN		=> CHECKSUM_INIT_IN,
 			 CHECKSUM_SET_INIT_IN	=> CHECKSUM_SET_INIT_IN,
+			 CHECKSUM_ODD_LENGTH_IN	=> CHECKSUM_ODD_LENGTH_IN,
           CHECKSUM_OUT => CHECKSUM_OUT,
           CHECKSUM_DONE_OUT => CHECKSUM_DONE_OUT
         );
@@ -120,6 +123,7 @@ BEGIN
 	
 		wait for CLK_IN_period*50;
 
+		COUNT_IN <= "00000001000";
 		CHECKSUM_INIT_IN <= X"1234";
 		CHECKSUM_SET_INIT_IN <= '0';
 		wait for CLK_IN_period;
@@ -130,7 +134,9 @@ BEGIN
 		CHECKSUM_CALC_IN <= '0';
 		wait for CLK_IN_period;
 		CHECKSUM_CALC_IN <= '1';
+		CHECKSUM_ODD_LENGTH_IN <= '1';
 		wait for CLK_IN_period;
+		CHECKSUM_ODD_LENGTH_IN <= '0';
 		CHECKSUM_CALC_IN <= '0';
 		wait for CLK_IN_period;
 
