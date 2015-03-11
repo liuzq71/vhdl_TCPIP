@@ -108,14 +108,15 @@ architecture Behavioral of eth_mod is
 	
 	COMPONENT TCP_FIFO
 	  PORT (
-		 clk : IN STD_LOGIC;
-		 din : IN STD_LOGIC_VECTOR(7 DOWNTO 0);
-		 wr_en : IN STD_LOGIC;
-		 rd_en : IN STD_LOGIC;
-		 dout : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
-		 full : OUT STD_LOGIC;
-		 empty : OUT STD_LOGIC;
-		 data_count : OUT STD_LOGIC_VECTOR(11 DOWNTO 0));
+		 clk 				: IN STD_LOGIC;
+		 din 				: IN STD_LOGIC_VECTOR(7 DOWNTO 0);
+		 wr_en 			: IN STD_LOGIC;
+		 rd_en 			: IN STD_LOGIC;
+		 dout 			: OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
+		 full 			: OUT STD_LOGIC;
+		 almost_full 	: OUT STD_LOGIC;
+		 empty 			: OUT STD_LOGIC;
+		 data_count 	: OUT STD_LOGIC_VECTOR(11 DOWNTO 0));
 	END COMPONENT;
 	
 	COMPONENT lfsr32_mod
@@ -2784,13 +2785,14 @@ begin
 		 rd_en 			=> tcp_data_rd_en,
 		 dout 			=> tcp_rx_data_rd_data,
 		 full 			=> open,
+		 almost_full 	=> open,
 		 empty 			=> tcp_rd_data_available,
 		 data_count 	=> tcp_rd_data_count);
 
 --------------------- TCP TX DATA ----------------------------
 
 	TCP_WR_DATA_POSSIBLE_OUT <= not(tcp_wr_data_fifo_full);
-	tcp_wr_data_en <= TCP_WR_DATA_EN_IN;
+	tcp_wr_data_en <= TCP_WR_DATA_EN_IN and not(tcp_wr_data_fifo_full);
 	tcp_wr_data <= TCP_WR_DATA_IN;
 	tcp_wr_data_flush <= TCP_WR_DATA_FLUSH_IN;
 	tcp_tx_data_rd <= '1' when (tx_packet_state = LOAD_TX_PACKET_DATA) or (tx_packet_state = INIT_LOAD_TX_PACKET_DATA) else '0'; -- TODO or previous state = LOAD_TX_PACKET_DATA
@@ -2802,7 +2804,8 @@ begin
 		 wr_en 			=> tcp_wr_data_en,
 		 rd_en 			=> tcp_tx_data_rd,
 		 dout 			=> tcp_tx_data,
-		 full 			=> tcp_wr_data_fifo_full,
+		 full 			=> open,
+		 almost_full 	=> tcp_wr_data_fifo_full,
 		 empty 			=> open,
 		 data_count 	=> tcp_wr_data_count);
 

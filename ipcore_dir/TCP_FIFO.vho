@@ -60,6 +60,7 @@ COMPONENT TCP_FIFO
     rd_en : IN STD_LOGIC;
     dout : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
     full : OUT STD_LOGIC;
+    almost_full : OUT STD_LOGIC;
     empty : OUT STD_LOGIC;
     data_count : OUT STD_LOGIC_VECTOR(11 DOWNTO 0)
   );
@@ -78,6 +79,7 @@ your_instance_name : TCP_FIFO
     rd_en => rd_en,
     dout => dout,
     full => full,
+    almost_full => almost_full,
     empty => empty,
     data_count => data_count
   );

@@ -48,6 +48,7 @@ ENTITY TCP_FIFO IS
     rd_en : IN STD_LOGIC;
     dout : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
     full : OUT STD_LOGIC;
+    almost_full : OUT STD_LOGIC;
     empty : OUT STD_LOGIC;
     data_count : OUT STD_LOGIC_VECTOR(11 DOWNTO 0)
   );
@@ -63,6 +64,7 @@ COMPONENT wrapped_TCP_FIFO
     rd_en : IN STD_LOGIC;
     dout : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
     full : OUT STD_LOGIC;
+    almost_full : OUT STD_LOGIC;
     empty : OUT STD_LOGIC;
     data_count : OUT STD_LOGIC_VECTOR(11 DOWNTO 0)
   );
@@ -119,7 +121,7 @@ END COMPONENT;
       c_family => "spartan6",
       c_full_flags_rst_val => 0,
       c_has_almost_empty => 0,
-      c_has_almost_full => 0,
+      c_has_almost_full => 1,
       c_has_axi_aruser => 0,
       c_has_axi_awuser => 0,
       c_has_axi_buser => 0,
@@ -272,6 +274,7 @@ U0 : wrapped_TCP_FIFO
     rd_en => rd_en,
     dout => dout,
     full => full,
+    almost_full => almost_full,
     empty => empty,
     data_count => data_count
   );
