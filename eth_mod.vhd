@@ -153,6 +153,7 @@ architecture Behavioral of eth_mod is
 subtype slv is std_logic_vector;
 
 constant C_250us : unsigned(15 downto 0) := X"61A8";
+constant C_200ms : unsigned(24 downto 0) := '1'&X"312D00";
 
 constant C_init_cmnds_start_addr 	: std_logic_vector(7 downto 0) := X"01";
 constant C_init_cmnds_max_addr 		: std_logic_vector(7 downto 0) := X"7F";
@@ -317,9 +318,13 @@ signal tcp_rx_data_rd_data 						: std_logic_vector(7 downto 0) := (others => '0
 
 signal tcp_wr_data_fifo_full, tcp_wr_data_en, tcp_tx_data_rd : std_logic := '0';
 signal tcp_wr_data_flush, tcp_data_flush_waiting : std_logic := '0';
+signal large_tx_packet_waiting : std_logic := '0';
 signal tcp_wr_data, tcp_tx_data : std_logic_vector(7 downto 0) := (others => '0');
 signal tx_bytes_to_send, tx_total_packet_length, tx_packet_data_counter : unsigned(11 downto 0) := (others => '0');
 signal tx_total_packet_length_inc_mac, tx_total_packet_length_checksum 	: unsigned(11 downto 0) := (others => '0');
+signal tx_data_packet_req_ack : std_logic := '0';
+signal tx_packet_ack_timeout : unsigned(24 downto 0) := C_200ms;
+signal tx_packet_ack_timeout_occur : unsigned(3 downto 0) := X"0";
 
 signal clk_1hz, clk_1hz_prev : std_logic := '0';
 signal init_enc28j60_waiting, dhcp_connect_waiting, tcp_connect_waiting : std_logic := '0';
@@ -603,8 +608,9 @@ signal tx_packet_state, tx_packet_next_state : TX_PACKET_CONFIG_ST := IDLE;
 
 begin
 	
-	DEBUG_OUT(15 downto 8) <= X"00";
-	--DEBUG_OUT(15 downto 11) <= (others => '0');
+	--DEBUG_OUT(15 downto 8) <= X"00";
+	--DEBUG_OUT(15 downto 4) <= X"000";
+	--DEBUG_OUT(15 downto 12) <= (others => '0');
 	--DEBUG_OUT(15 downto 12) <= slv(interrupt_counter(3 downto 0));
 	--DEBUG_OUT <= slv(rx_data_length);
 	--DEBUG_OUT <= udp_source_port when DEBUG_IN = '0' else udp_dest_port;
@@ -638,12 +644,14 @@ begin
 	--DEBUG_OUT(3 downto 0) <= ip_packet_version;
 	--DEBUG_OUT(7 downto 0) <= X"0"&"0"&debug_rx_flag2&debug_rx_flag1&debug_rx_flag;
 	--DEBUG_OUT(7 downto 0) <= slv(num_packets);
-	DEBUG_OUT(7 downto 0) <= slv(tcp_tx_data);
+	--DEBUG_OUT(7 downto 0) <= slv(tcp_tx_data);
+	--DEBUG_OUT(3 downto 0) <= slv(tx_packet_ack_timeout_occur);
 	--DEBUG_OUT(11 downto 0) <= slv(rx_kbytes_sec);
 	--DEBUG_OUT(15 downto 0) <= slv(interrupt_counter);
 	--DEBUG_OUT(15 downto 0) <= slv(checksum);
 	--DEBUG_OUT(15 downto 0) <= slv(checksum_initial_value);
 	--DEBUG_OUT(10 downto 0) <= slv(rx_data_start_addr);
+	DEBUG_OUT(11 downto 0) <= slv(tcp_wr_data_count);
 	
 	packet_definition_addr <= frame_addr when doing_tx_packet_config = '0' else slv(tx_packet_frame_addr);
 	frame_data <= packet_definition_data;
@@ -688,6 +696,8 @@ begin
 				elsif tx_packet_ready_for_transmission = '1' then
 					eth_next_state <= PRE_TX_TRANSMIT0;
 				elsif tcp_data_flush_waiting = '1' then
+					eth_next_state <= TRIGGER_TCP_TX;
+				elsif large_tx_packet_waiting = '1' then
 					eth_next_state <= TRIGGER_TCP_TX;
 				else
 					eth_next_state <= SERVICE_INTERRUPT0;
@@ -974,11 +984,16 @@ begin
 			elsif eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				tcp_connect_waiting <= '0';
 			end if;
-			if tcp_wr_data_flush = '1' then
+			if tcp_wr_data_flush = '1' and tcp_connection_active = '1' then
 				tcp_data_flush_waiting <= '1';
 			elsif eth_state = TRIGGER_TCP_TX then
 				tcp_data_flush_waiting <= '0';
 			end if;
+--			if unsigned(tcp_wr_data_count) > X"5B3" and tcp_connection_active = '1' then
+--				large_tx_packet_waiting <= '1';
+--			else
+				large_tx_packet_waiting <= '0';
+--			end if;
 		end if;
 	end process;
 	
@@ -1039,17 +1054,6 @@ begin
 			end if;
 		end if;
 	end process;
-	
---	FRAME_RD_PROC: process(CLK_IN)
---   begin
---      if rising_edge(CLK_IN) then
---			if eth_state = HANDLE_INIT_CMND1 then
---				frame_data_rd <= '1';
---			else
---				frame_data_rd <= '0';
---			end if;
---      end if;
---   end process;
 
 	SPI_WR_PROC: process(CLK_IN)
    begin
@@ -1772,7 +1776,11 @@ begin
 					packet_handler_next_state <= RESEND_ACK;	-- ACK failed to reach target, resend
 				end if;
 			when CHECK_TCP_PSH_ACK_PACKET2 =>
-				packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET3;
+				if rx_data_length /= X"0000" then
+					packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET3;
+				else
+					packet_handler_next_state <= COMPLETE; -- This was just an ACK
+				end if;
 			when CHECK_TCP_PSH_ACK_PACKET3 =>
 				packet_handler_next_state <= READ_TCP_RX_DATA;
 				
@@ -1833,7 +1841,7 @@ begin
 	ACK_TIMER_PROC: process(CLK_IN)
 	begin
 		if rising_edge(CLK_IN) then
-			if packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
+			if packet_handler_state = CHECK_TCP_PSH_ACK_PACKET3 then
 				ack_countdown <= C_250us;
 			elsif ack_countdown /= X"0000" then
 				ack_countdown <= ack_countdown - 1;
@@ -2334,7 +2342,7 @@ begin
 			when INIT_LOAD_TX_PACKET_DATA =>
 				tx_packet_next_state <= LOAD_TX_PACKET_DATA;
 			when LOAD_TX_PACKET_DATA =>
-				if tx_packet_data_counter = X"000" then
+				if tx_packet_data_counter = X"001" then
 					tx_packet_next_state <= HANDLE_PACKET_INSTRUCTION1;
 				end if;
 			
@@ -2439,7 +2447,7 @@ begin
 							
 	tcp_sequence_number_p1 <= tcp_sequence_number + 1;
 	
-	RANDOM_VALS_PROC: process(CLK_IN)
+	METADATA_PTOC: process(CLK_IN)
 	begin
 		if rising_edge(CLK_IN) then
 			ip_identification <= lfsr_val(15 downto 0);			-- TODO True random?
@@ -2493,8 +2501,8 @@ begin
 				tcp_connection_active <= '0';
 			end if;
 			if packet_handler_state = TRIGGER_TCP_PSH_ACK0 then
-				if unsigned(tcp_wr_data_count) > X"5B4" then
-					tx_bytes_to_send <= X"5B4";
+				if unsigned(tcp_wr_data_count) > X"580" then
+					tx_bytes_to_send <= X"580";
 				else
 					tx_bytes_to_send <= unsigned(tcp_wr_data_count);
 				end if;
@@ -2507,6 +2515,23 @@ begin
 			end if;
 			if packet_handler_state = TRIGGER_TCP_PSH_ACK1 then
 				tx_total_packet_length_checksum <= tx_bytes_to_send + X"022"; --  TCP Header length (28 Bytes) + Protocol (value=6)
+			end if;
+			if packet_handler_state = TRIGGER_TCP_PSH_ACK3 then
+				tx_data_packet_req_ack <= '1';
+			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
+				tx_data_packet_req_ack <= '0';
+			end if;
+			if tx_data_packet_req_ack = '0' then
+				tx_packet_ack_timeout <= C_200ms;
+			else
+				tx_packet_ack_timeout <= tx_packet_ack_timeout - 1;
+			end if;
+			if tx_data_packet_req_ack = '0' then
+				tx_packet_ack_timeout_occur <= X"0";
+			elsif tx_packet_ack_timeout = '0'&X"000000" then
+				if tx_packet_ack_timeout_occur /= X"F" then
+					tx_packet_ack_timeout_occur <= tx_packet_ack_timeout_occur + 1;
+				end if;
 			end if;
 		end if;
 	end process;
@@ -2783,20 +2808,20 @@ begin
 
 	--- Network Stats ---
 	
-	process(CLK_IN)
-	begin
-		if rising_edge(CLK_IN) then
-			clk_1hz_prev <= clk_1hz;
-			if clk_1hz_prev = '0' and clk_1hz = '1' then
-				rx_kbytes_sec <= rx_bytes_counter(21 downto 10);
-			end if;
-			if clk_1hz_prev = '0' and clk_1hz = '1' then
-				rx_bytes_counter <= (others => '0');
-			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
-				rx_bytes_counter <= rx_bytes_counter + RESIZE(total_packet_length, 22);
-			end if;
-		end if;
-	end process;
+--	process(CLK_IN)
+--	begin
+--		if rising_edge(CLK_IN) then
+--			clk_1hz_prev <= clk_1hz;
+--			if clk_1hz_prev = '0' and clk_1hz = '1' then
+--				rx_kbytes_sec <= rx_bytes_counter(21 downto 10);
+--			end if;
+--			if clk_1hz_prev = '0' and clk_1hz = '1' then
+--				rx_bytes_counter <= (others => '0');
+--			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
+--				rx_bytes_counter <= rx_bytes_counter + RESIZE(total_packet_length, 22);
+--			end if;
+--		end if;
+--	end process;
 
 	--- DATA I/O ---
 	

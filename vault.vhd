@@ -175,8 +175,9 @@ signal eth_command_en, eth_command_cmplt : std_logic;
 	
 signal sdi_buf, sdo_buf, sclk_buf, sclk_buf_n, sclk_oddr, cs_buf : std_logic;
 
-signal clk_div_counter : unsigned(7 downto 0);
+signal clk_div_counter : unsigned(19 downto 0);
 signal tcp_rd_en, tcp_rd_en_p, tcp_rd_data_avail : std_logic;
+signal tcp_wr_en, tcp_wr_possible : std_logic;
 signal check_rd_data : std_logic;
 signal tcp_data_rd : std_logic_vector(7 downto 0);
 signal tcp_data_wr : unsigned(7 downto 0) := X"00";
@@ -296,9 +297,9 @@ begin
 					  TCP_RD_DATA_AVAIL_OUT 	=> tcp_rd_data_avail,
 					  TCP_RD_DATA_EN_IN 			=> tcp_rd_en,
 					  TCP_RD_DATA_OUT 			=> tcp_data_rd,
-					  TCP_WR_DATA_POSSIBLE_OUT	=> open,
-					  TCP_WR_DATA_EN_IN 			=> buttons_edge(0),
-					  TCP_WR_DATA_FLUSH_IN		=> buttons_edge(1),
+					  TCP_WR_DATA_POSSIBLE_OUT	=> tcp_wr_possible,
+					  TCP_WR_DATA_EN_IN 			=> tcp_wr_en,
+					  TCP_WR_DATA_FLUSH_IN		=> buttons_edge(2),
 					  TCP_WR_DATA_IN 				=> slv(tcp_data_wr),
 					  
 					  CLK_1HZ_IN	=> clk_1hz,
@@ -322,7 +323,7 @@ begin
 		process(clk_100MHz)
 		begin
 			if rising_edge(clk_100MHz) then
-				if buttons_edge(0) = '1' then
+				if tcp_wr_en = '1' then
 					tcp_data_wr <= tcp_data_wr + 1;
 				end if;
 			end if;
@@ -331,15 +332,18 @@ begin
 		process(clk_100MHz)
 		begin
 			if rising_edge(clk_100MHz) then
-				if clk_div_counter = X"00" then
-					clk_div_counter <= unsigned(SW_IN);
+				if clk_div_counter = X"00000" then
+					clk_div_counter <= X"FFFFF";
 				else
 					clk_div_counter <= clk_div_counter - 1;
 				end if;
-				if clk_div_counter = X"00" and tcp_rd_data_avail = '1' then
-					tcp_rd_en <= '1';
+--				if clk_div_counter = X"00" and tcp_rd_data_avail = '1' then
+				if clk_div_counter = X"00000" and tcp_wr_possible = '1' and buttons(0) = '0' then
+--					tcp_rd_en <= '1';
+					tcp_wr_en <= '1';
 				else
-					tcp_rd_en <= '0';
+--					tcp_rd_en <= '0';
+					tcp_wr_en <= '0';
 				end if;
 				if tcp_rd_en = '1' then
 					tcp_data_rd_p <= unsigned(tcp_data_rd);
