@@ -603,7 +603,7 @@ signal tx_packet_state, tx_packet_next_state : TX_PACKET_CONFIG_ST := IDLE;
 
 begin
 	
-	--DEBUG_OUT(15 downto 8) <= X"00";
+	DEBUG_OUT(15 downto 8) <= X"00";
 	--DEBUG_OUT(15 downto 11) <= (others => '0');
 	--DEBUG_OUT(15 downto 12) <= slv(interrupt_counter(3 downto 0));
 	--DEBUG_OUT <= slv(rx_data_length);
@@ -638,10 +638,11 @@ begin
 	--DEBUG_OUT(3 downto 0) <= ip_packet_version;
 	--DEBUG_OUT(7 downto 0) <= X"0"&"0"&debug_rx_flag2&debug_rx_flag1&debug_rx_flag;
 	--DEBUG_OUT(7 downto 0) <= slv(num_packets);
+	DEBUG_OUT(7 downto 0) <= slv(tcp_tx_data);
 	--DEBUG_OUT(11 downto 0) <= slv(rx_kbytes_sec);
 	--DEBUG_OUT(15 downto 0) <= slv(interrupt_counter);
 	--DEBUG_OUT(15 downto 0) <= slv(checksum);
-	DEBUG_OUT(15 downto 0) <= slv(checksum_initial_value);
+	--DEBUG_OUT(15 downto 0) <= slv(checksum_initial_value);
 	--DEBUG_OUT(10 downto 0) <= slv(rx_data_start_addr);
 	
 	packet_definition_addr <= frame_addr when doing_tx_packet_config = '0' else slv(tx_packet_frame_addr);
@@ -671,7 +672,7 @@ begin
 	NEXT_STATE_DECODE: process (eth_state, command, command_waiting, init_cmnd_addr, poll_interrupt_reg,
 											frame_data, tx_packet_ready_for_transmission, spi_oper_cmplt, 
 												eir_register, previous_packet_pointer, next_packet_pointer, rx_packet_handled, 
-													tx_packet_length_counter, spi_rd_cmplt, spi_wr_cmplt, DEBUG_IN(0))
+													tx_packet_length_counter, spi_rd_cmplt, spi_wr_cmplt)
    begin
       eth_next_state <= eth_state;  --default is to stay in current state
       case (eth_state) is
@@ -2767,8 +2768,7 @@ begin
 	tcp_wr_data_en <= TCP_WR_DATA_EN_IN;
 	tcp_wr_data <= TCP_WR_DATA_IN;
 	tcp_wr_data_flush <= TCP_WR_DATA_FLUSH_IN;
-
-	tcp_tx_data_rd <= '1' when (tx_packet_state = LOAD_TX_PACKET_DATA) else '0'; -- TODO or previous state = LOAD_TX_PACKET_DATA
+	tcp_tx_data_rd <= '1' when (tx_packet_state = LOAD_TX_PACKET_DATA) or (tx_packet_state = INIT_LOAD_TX_PACKET_DATA) else '0'; -- TODO or previous state = LOAD_TX_PACKET_DATA
 
 	TCP_TX_FIFO : TCP_FIFO
 	  PORT MAP (

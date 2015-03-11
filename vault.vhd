@@ -254,7 +254,7 @@ begin
 ------------------------- Ethernet I/O --------------------------------
 
 	RESET <= '0';
-	debug_i <= buttons(2)&buttons(1)&buttons(0);
+	debug_i <= buttons_edge(2)&buttons_edge(1)&buttons_edge(0);
 	
 	OBUF_inst_0: OBUF generic map ( DRIVE => 12, IOSTANDARD => "DEFAULT", SLEW => "FAST") port map (I => sdi_buf, O => SDO);
 	IBUF_inst_0: IBUF port map (I => SDI, O => sdo_buf);
