@@ -865,8 +865,10 @@ begin
 				end if;
 				
 			when TRIGGER_TCP_TX =>
-				if packet_handler_state = CHECK_IF_DATA_TO_SEND then
+				if tcp_wr_data_count /= X"000" then
 					eth_next_state <= IDLE;
+				elsif tx_packet_ready_for_transmission = '1' then
+					eth_next_state <= PRE_TX_TRANSMIT0;
 				end if;
 				
 			when SERVICE_INTERRUPT6 =>
@@ -990,11 +992,11 @@ begin
 			elsif eth_state = TRIGGER_TCP_TX then
 				tcp_data_flush_waiting <= '0';
 			end if;
---			if unsigned(tcp_wr_data_count) > X"5B3" and tcp_connection_active = '1' then
---				large_tx_packet_waiting <= '1';
---			else
+			if unsigned(tcp_wr_data_count) > X"580" and tcp_connection_active = '1' then
+				large_tx_packet_waiting <= '1';
+			else
 				large_tx_packet_waiting <= '0';
---			end if;
+			end if;
 		end if;
 	end process;
 	
