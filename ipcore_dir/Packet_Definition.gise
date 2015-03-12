@@ -26,23 +26,6 @@
     <file xil_pn:fileType="FILE_VHO" xil_pn:name="Packet_Definition.vho" xil_pn:origination="imported"/>
   </files>
 
-  <transforms xmlns="http://www.xilinx.com/XMLSchema">
-    <transform xil_pn:end_ts="1426056873" xil_pn:name="TRAN_schematicsToHdl" xil_pn:prop_ck="-8461528264676949298" xil_pn:start_ts="1426056873">
-      <status xil_pn:value="SuccessfullyRun"/>
-      <status xil_pn:value="ReadyToRun"/>
-    </transform>
-    <transform xil_pn:end_ts="1426056873" xil_pn:name="TRAN_regenerateCores" xil_pn:prop_ck="-8071576035274672721" xil_pn:start_ts="1426056873">
-      <status xil_pn:value="SuccessfullyRun"/>
-      <status xil_pn:value="ReadyToRun"/>
-    </transform>
-    <transform xil_pn:end_ts="1426056873" xil_pn:name="TRAN_SubProjectAbstractToPreProxy" xil_pn:start_ts="1426056873">
-      <status xil_pn:value="SuccessfullyRun"/>
-      <status xil_pn:value="ReadyToRun"/>
-    </transform>
-    <transform xil_pn:end_ts="1426056873" xil_pn:name="TRAN_xawsTohdl" xil_pn:prop_ck="2206413991218120080" xil_pn:start_ts="1426056873">
-      <status xil_pn:value="SuccessfullyRun"/>
-      <status xil_pn:value="ReadyToRun"/>
-    </transform>
-  </transforms>
+  <transforms xmlns="http://www.xilinx.com/XMLSchema"/>
 
 </generated_project>
