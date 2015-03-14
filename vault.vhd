@@ -40,7 +40,6 @@ entity vault is
 				SDO			: out STD_LOGIC;
 				SCLK 			: out STD_LOGIC;
 				CS				: out STD_LOGIC;
-				INT			: in STD_LOGIC;
 				RESET			: out STD_LOGIC;
 				
 				SD_MISO_IN	: in  STD_LOGIC;
@@ -105,8 +104,7 @@ architecture Behavioral of vault is
 			  SDI_OUT 	: out  STD_LOGIC;
            SDO_IN 	: in  STD_LOGIC;
            SCLK_OUT 	: out  STD_LOGIC;
-           CS_OUT 	: out  STD_LOGIC;
-			  INT_IN		: in STD_LOGIC);
+           CS_OUT 	: out  STD_LOGIC);
 	END COMPONENT;
 
 	COMPONENT SdCardCtrl
@@ -254,7 +252,7 @@ begin
 				
 ------------------------- Ethernet I/O --------------------------------
 
-	RESET <= '0';
+	RESET <= '1';
 	debug_i <= buttons_edge(2)&buttons_edge(1)&buttons_edge(0);
 	
 	OBUF_inst_0: OBUF generic map ( DRIVE => 12, IOSTANDARD => "DEFAULT", SLEW => "FAST") port map (I => sdi_buf, O => SDO);
@@ -308,8 +306,7 @@ begin
 					  SDI_OUT 	=> sdi_buf,
 					  SDO_IN 	=> sdo_buf,
 					  SCLK_OUT 	=> sclk_buf,
-					  CS_OUT 	=> cs_buf,
-					  INT_IN 	=> INT);
+					  CS_OUT 	=> cs_buf);
 
 ------------------------- TCP Testing --------------------------------
 
@@ -329,6 +326,8 @@ begin
 			end if;
 		end process;
 
+		tcp_wr_en <= buttons_edge(0);
+
 		process(clk_100MHz)
 		begin
 			if rising_edge(clk_100MHz) then
@@ -340,10 +339,10 @@ begin
 --				if clk_div_counter = X"00" and tcp_rd_data_avail = '1' then
 				if clk_div_counter = X"00000" and tcp_wr_possible = '1' and buttons(0) = '0' then
 --					tcp_rd_en <= '1';
-					tcp_wr_en <= '1';
+--					tcp_wr_en <= '1';
 				else
 --					tcp_rd_en <= '0';
-					tcp_wr_en <= '0';
+--					tcp_wr_en <= '0';
 				end if;
 				if tcp_rd_en = '1' then
 					tcp_data_rd_p <= unsigned(tcp_data_rd);

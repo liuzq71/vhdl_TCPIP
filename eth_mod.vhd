@@ -59,8 +59,7 @@ entity eth_mod is
 			  SDI_OUT 	: out  STD_LOGIC;
            SDO_IN 	: in  STD_LOGIC;
            SCLK_OUT 	: out  STD_LOGIC;
-           CS_OUT 	: out  STD_LOGIC;
-			  INT_IN		: in STD_LOGIC);
+           CS_OUT 	: out  STD_LOGIC);
 end eth_mod;
 
 architecture Behavioral of eth_mod is
@@ -248,12 +247,13 @@ signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100"; -- 192.168.
 
 signal tx_packet_frame_addr :unsigned(10 downto 0);
 signal tx_packet_length, tx_packet_length_counter, tx_packet_end_pointer :unsigned(15 downto 0);
-signal prev_tx_packet_length, prev_tx_packet_end_pointer :unsigned(15 downto 0);
+signal prev_tx_packet_end_pointer :unsigned(15 downto 0);
 signal doing_tx_packet_config, tx_packet_frame_data_rd : std_logic := '0';
 signal packet_instruction, packet_data : std_logic_vector(7 downto 0);
 signal tx_packet_ready_for_transmission : std_logic := '0';
+signal send_prev_packet_waiting : std_logic := '0';
 signal debug0_waiting : std_logic := '0';
-signal tx_base_addr : unsigned(15 downto 0);
+signal tx_base_addr, tx_base_addr_prev : unsigned(15 downto 0);
 signal tx_base_addr_select : std_logic := '0';
 
 signal ip_packet_version  			: std_logic_vector(3 downto 0);
@@ -419,6 +419,23 @@ type ETH_ST is (	IDLE,
 						HANDLE_TX_TRANSMIT16,
 						HANDLE_TX_TRANSMIT17,
 						HANDLE_TX_TRANSMIT_PRE11,
+						HANDLE_TX_TRANSMIT_PREV0,
+						HANDLE_TX_TRANSMIT_PREV1,
+						HANDLE_TX_TRANSMIT_PREV2,
+						HANDLE_TX_TRANSMIT_PREV3,
+						HANDLE_TX_TRANSMIT_PREV4,
+						HANDLE_TX_TRANSMIT_PREV5,
+						HANDLE_TX_TRANSMIT_PREV6,
+						HANDLE_TX_TRANSMIT_PREV7,
+						HANDLE_TX_TRANSMIT_PREV8,
+						HANDLE_TX_TRANSMIT_PREV9,
+						HANDLE_TX_TRANSMIT_PREV10,
+						HANDLE_TX_TRANSMIT_PREV11,
+						HANDLE_TX_TRANSMIT_PREV12,
+						HANDLE_TX_TRANSMIT_PREV13,
+						HANDLE_TX_TRANSMIT_PREV14,
+						HANDLE_TX_TRANSMIT_PREV15,
+						HANDLE_TX_TRANSMIT_PREV16,
 						RESEND_ACK_IN_BUFFER);
 
 signal eth_state, eth_next_state : ETH_ST := IDLE;
@@ -702,6 +719,8 @@ begin
 					eth_next_state <= TRIGGER_DHCP_DISCOVER;
 				elsif tcp_connect_waiting = '1' then
 					eth_next_state <= TRIGGER_NEW_TCP_CONNECTION;
+				elsif send_prev_packet_waiting = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT_PREV0;
 				elsif resend_ack_packet = '1' then
 					eth_next_state <= RESEND_ACK_IN_BUFFER;
 				elsif tx_packet_ready_for_transmission = '1' then
@@ -713,7 +732,7 @@ begin
 				else
 					eth_next_state <= SERVICE_INTERRUPT0;
 				end if;
-				
+
 			when HANDLE_INIT_CMND0 =>
 				eth_next_state <= HANDLE_INIT_CMND1;
 			when HANDLE_INIT_CMND1 =>
@@ -942,7 +961,6 @@ begin
 				if spi_wr_cmplt = '1' then
 					eth_next_state <= HANDLE_TX_TRANSMIT7;
 				end if;
-				
 			when HANDLE_TX_TRANSMIT_PRE11 =>
 				if spi_oper_cmplt = '1' then
 					eth_next_state <= HANDLE_TX_TRANSMIT11;
@@ -968,6 +986,57 @@ begin
 			when HANDLE_TX_TRANSMIT17 =>
 				eth_next_state <= IDLE;
 				
+			when HANDLE_TX_TRANSMIT_PREV0 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT_PREV1;
+			when HANDLE_TX_TRANSMIT_PREV1 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT_PREV2;
+				end if;
+			when HANDLE_TX_TRANSMIT_PREV2 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT_PREV3;
+			when HANDLE_TX_TRANSMIT_PREV3 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT_PREV4;
+				end if;
+			when HANDLE_TX_TRANSMIT_PREV4 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT_PREV5;
+			when HANDLE_TX_TRANSMIT_PREV5 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT_PREV6;
+				end if;
+			when HANDLE_TX_TRANSMIT_PREV6 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT_PREV7;
+			when HANDLE_TX_TRANSMIT_PREV7 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT_PREV8;
+				end if;
+			when HANDLE_TX_TRANSMIT_PREV8 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT_PREV9;
+			when HANDLE_TX_TRANSMIT_PREV9 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT_PREV10;
+				end if;
+			when HANDLE_TX_TRANSMIT_PREV10 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT_PREV11;
+			when HANDLE_TX_TRANSMIT_PREV11 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT_PREV12;
+				end if;
+			when HANDLE_TX_TRANSMIT_PREV12 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT_PREV13;
+			when HANDLE_TX_TRANSMIT_PREV13 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT_PREV14;
+				end if;
+			when HANDLE_TX_TRANSMIT_PREV14 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT_PREV15;
+			when HANDLE_TX_TRANSMIT_PREV15 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT_PREV16;
+				end if;
+			when HANDLE_TX_TRANSMIT_PREV16 =>
+				eth_next_state <= IDLE;
+
 			when RESEND_ACK_IN_BUFFER =>
 				eth_next_state <= HANDLE_TX_TRANSMIT15;
 				
@@ -1009,7 +1078,7 @@ begin
 			elsif eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				tcp_connect_waiting <= '0';
 			end if;
-			if eth_state = TRIGGER_TCP_TX or tx_data_packet_req_ack = '0' then
+			if eth_state = TRIGGER_TCP_TX or tx_data_packet_req_ack = '1' then
 				tcp_data_flush_waiting <= '0';
 			elsif tcp_wr_data_flush = '1' and tcp_connection_active = '1' then
 				tcp_data_flush_waiting <= '1';
@@ -1018,6 +1087,11 @@ begin
 				large_tx_packet_waiting <= '1';
 			else
 				large_tx_packet_waiting <= '0';
+			end if;
+			if DEBUG_IN(2) = '1' then
+				send_prev_packet_waiting <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV16 then
+				send_prev_packet_waiting <= '0';
 			end if;
 		end if;
 	end process;
@@ -1123,6 +1197,22 @@ begin
 				spi_we <= '1';
 			elsif eth_state = HANDLE_TX_TRANSMIT15 then
 				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV0 then
+				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV2 then
+				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV4 then
+				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV6 then
+				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV8 then
+				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV10 then
+				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV12 then
+				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV14 then
+				spi_we <= '1';
 			else
 				spi_we <= '0';
 			end if;
@@ -1172,6 +1262,22 @@ begin
 				spi_wr_addr <= X"47";
 			elsif eth_state = HANDLE_TX_TRANSMIT15 then
 				spi_wr_addr <= X"9F";
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV0 then
+				spi_wr_addr <= X"BF";
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV2 then
+				spi_wr_addr <= X"42";
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV4 then
+				spi_wr_addr <= X"43";
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV6 then
+				spi_wr_addr <= X"44";
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV8 then
+				spi_wr_addr <= X"45";
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV10 then
+				spi_wr_addr <= X"46";
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV12 then
+				spi_wr_addr <= X"47";
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV14 then
+				spi_wr_addr <= X"9F";
 			end if;
       end if;
    end process;
@@ -1220,6 +1326,22 @@ begin
 			elsif eth_state = HANDLE_TX_TRANSMIT13 then
 				spi_wr_data <= slv(tx_packet_end_pointer(15 downto 8));
 			elsif eth_state = HANDLE_TX_TRANSMIT15 then
+				spi_wr_data <= X"08";
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV0 then
+				spi_wr_data <= X"03";
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV2 then
+				spi_wr_data <= slv(tx_base_addr(7 downto 0));
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV4 then
+				spi_wr_data <= slv(tx_base_addr(15 downto 8));
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV6 then
+				spi_wr_data <= slv(tx_base_addr(7 downto 0));
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV8 then
+				spi_wr_data <= slv(tx_base_addr(15 downto 8));
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV10 then
+				spi_wr_data <= slv(prev_tx_packet_end_pointer(7 downto 0));
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV12 then
+				spi_wr_data <= slv(prev_tx_packet_end_pointer(15 downto 8));
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV14 then
 				spi_wr_data <= X"08";
 			end if;
       end if;
@@ -2625,25 +2747,18 @@ begin
 			end if;
 			if tx_packet_state = INIT_ARP_REPLY_METADATA then
 				tx_packet_length <= unsigned(C_arp_reply_length);
-				prev_tx_packet_length <= tx_packet_length;
 			elsif tx_packet_state = INIT_ARP_REQUEST_METADATA then
 				tx_packet_length <= unsigned(C_arp_request_length);
-				prev_tx_packet_length <= tx_packet_length;
 			elsif tx_packet_state = INIT_ICMP_REPLY_METADATA then
 				tx_packet_length <= unsigned(C_icmp_reply_length);
-				prev_tx_packet_length <= tx_packet_length;
 			elsif tx_packet_state = INIT_DHCP_DISCOVER_METADATA then
 				tx_packet_length <= unsigned(C_dhcp_discover_length);
-				prev_tx_packet_length <= tx_packet_length;
 			elsif tx_packet_state = INIT_DHCP_REQUEST_METADATA then
 				tx_packet_length <= unsigned(C_dhcp_request_length);
-				prev_tx_packet_length <= tx_packet_length;
 			elsif tx_packet_state = INIT_TCP_PACKET_METADATA then
 				tx_packet_length <= unsigned(C_tcp_packet_length);
-				prev_tx_packet_length <= tx_packet_length;
 			elsif tx_packet_state = INIT_TCP_TX_PACKET_METADATA then
 				tx_packet_length <= RESIZE(unsigned(tx_total_packet_length_inc_mac), 16);
-				prev_tx_packet_length <= tx_packet_length;
 			end if;
 			if tx_packet_state = INIT_ARP_REPLY_METADATA then
 				tx_packet_end_pointer <= tx_base_addr + unsigned(C_arp_reply_length);
