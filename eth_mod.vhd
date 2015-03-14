@@ -152,8 +152,9 @@ architecture Behavioral of eth_mod is
 
 subtype slv is std_logic_vector;
 
-constant C_250us : unsigned(15 downto 0) := X"61A8";
-constant C_200ms : unsigned(24 downto 0) := '1'&X"312D00";
+constant C_250us	: unsigned(15 downto 0) := X"61A8";
+constant C_200ms	: unsigned(24 downto 0) := '1'&X"312D00";
+constant C_20ms 	: unsigned(20 downto 0) := '1'&X"E8480";
 
 constant C_init_cmnds_start_addr 	: std_logic_vector(7 downto 0) := X"01";
 constant C_init_cmnds_max_addr 		: std_logic_vector(7 downto 0) := X"7F";
@@ -322,15 +323,16 @@ signal tcp_rd_data_count, tcp_wr_data_count 	: std_logic_vector(11 downto 0) := 
 signal tcp_rx_data 									: unsigned(7 downto 0) := (others => '0');
 signal tcp_rx_data_rd_data 						: std_logic_vector(7 downto 0) := (others => '0');
 
-signal tcp_wr_data_fifo_full, tcp_wr_data_en, tcp_tx_data_rd : std_logic := '0';
+signal tcp_wr_data_possible, tcp_wr_data_en, tcp_tx_data_rd : std_logic := '0';
 signal tcp_wr_data_flush, tcp_data_flush_waiting : std_logic := '0';
 signal large_tx_packet_waiting : std_logic := '0';
 signal tcp_wr_data, tcp_tx_data : std_logic_vector(7 downto 0) := (others => '0');
 signal tx_bytes_to_send, tx_total_packet_length, tx_packet_data_counter : unsigned(11 downto 0) := (others => '0');
 signal tx_total_packet_length_inc_mac, tx_total_packet_length_checksum 	: unsigned(11 downto 0) := (others => '0');
-signal tx_data_packet_req_ack, trigger_resend_tx_packet : std_logic := '0';
+signal tx_data_packet_req_ack, trigger_resend_tx_packet, next_tx_packet_req_ack : std_logic := '0';
 signal tx_packet_ack_timeout : unsigned(24 downto 0) := C_200ms;
 signal tx_packet_ack_timeout_occur, tx_packet_ack_timeout_occur_prev : unsigned(3 downto 0) := X"0";
+signal tx_timeout_counter : unsigned(20 downto 0);
 
 signal clk_1hz, clk_1hz_prev : std_logic := '0';
 signal init_enc28j60_waiting, dhcp_connect_waiting, tcp_connect_waiting : std_logic := '0';
@@ -386,7 +388,9 @@ type ETH_ST is (	IDLE,
 						HANDLE_RX_INTERRUPT17,
 						CHECK_IF_ACK_WAITING,
 						TRIGGER_ACK_PACKET,
-						TRIGGER_TCP_TX,
+						TRIGGER_TCP_TX0,
+						TRIGGER_TCP_TX1,
+						TRIGGER_TCP_TX2,
 						COPY_RX_PACKET_TO_BUF0,
 						COPY_RX_PACKET_TO_BUF1,
 						COPY_RX_PACKET_TO_BUF2,
@@ -418,6 +422,11 @@ type ETH_ST is (	IDLE,
 						HANDLE_TX_TRANSMIT15,
 						HANDLE_TX_TRANSMIT16,
 						HANDLE_TX_TRANSMIT17,
+						HANDLE_TX_TRANSMIT18,
+						HANDLE_TX_TRANSMIT19,
+						HANDLE_TX_TRANSMIT20,
+						HANDLE_TX_TRANSMIT21,
+						HANDLE_TX_TRANSMIT22,
 						HANDLE_TX_TRANSMIT_PRE11,
 						HANDLE_TX_TRANSMIT_PREV0,
 						HANDLE_TX_TRANSMIT_PREV1,
@@ -436,6 +445,7 @@ type ETH_ST is (	IDLE,
 						HANDLE_TX_TRANSMIT_PREV14,
 						HANDLE_TX_TRANSMIT_PREV15,
 						HANDLE_TX_TRANSMIT_PREV16,
+						WAIT_FOR_TRANSMIT_CMPLT,
 						RESEND_ACK_IN_BUFFER);
 
 signal eth_state, eth_next_state : ETH_ST := IDLE;
@@ -582,6 +592,7 @@ type PACKET_HANDLER_ST is (	IDLE,
 										TRIGGER_TCP_ACK2,
 										TRIGGER_TCP_ACK3,
 										RESEND_ACK,
+										RESEND_TX_PACKETS,
 										CHECK_IF_DATA_TO_SEND,
 										TRIGGER_TCP_PSH_ACK0,
 										TRIGGER_TCP_PSH_ACK1,
@@ -674,8 +685,8 @@ begin
 	--DEBUG_OUT(7 downto 0) <= slv(tcp_tx_data);
 	--DEBUG_OUT(3 downto 0) <= slv(tx_packet_ack_timeout_occur);
 	--DEBUG_OUT(11 downto 0) <= slv(rx_kbytes_sec);
-	--DEBUG_OUT(15 downto 0) <= slv(interrupt_counter);
-	DEBUG_OUT(15 downto 0) <= slv(tx_base_addr);
+	DEBUG_OUT(15 downto 0) <= slv(interrupt_counter);
+	--DEBUG_OUT(15 downto 0) <= slv(tx_base_addr);
 	--DEBUG_OUT(15 downto 0) <= slv(checksum);
 	--DEBUG_OUT(15 downto 0) <= slv(checksum_initial_value);
 	--DEBUG_OUT(10 downto 0) <= slv(rx_data_start_addr);
@@ -692,7 +703,7 @@ begin
 	INT_PROC: process(CLK_IN)
    begin
       if rising_edge(CLK_IN) then
-			if packet_handler_state = RESEND_ACK then
+			if eth_state = HANDLE_TX_INTERRUPT0 then
 				interrupt_counter <= interrupt_counter + 1;
 			end if;
 		end if;
@@ -726,9 +737,9 @@ begin
 				elsif tx_packet_ready_for_transmission = '1' then
 					eth_next_state <= PRE_TX_TRANSMIT0;
 				elsif tcp_data_flush_waiting = '1' then
-					eth_next_state <= TRIGGER_TCP_TX;
+					eth_next_state <= TRIGGER_TCP_TX0;
 				elsif large_tx_packet_waiting = '1' then
-					eth_next_state <= TRIGGER_TCP_TX;
+					eth_next_state <= TRIGGER_TCP_TX0;
 				else
 					eth_next_state <= SERVICE_INTERRUPT0;
 				end if;
@@ -893,10 +904,18 @@ begin
 					eth_next_state <= IDLE;
 				end if;
 				
-			when TRIGGER_TCP_TX =>
-				if tcp_wr_data_count /= X"000" or tx_data_packet_req_ack = '1' then
+			when TRIGGER_TCP_TX0 =>
+				if tcp_wr_data_count = X"000" or tx_data_packet_req_ack = '1' then
 					eth_next_state <= IDLE;
-				elsif tx_packet_ready_for_transmission = '1' then
+				else
+					eth_next_state <= TRIGGER_TCP_TX1;
+				end if;
+			when TRIGGER_TCP_TX1 =>
+				if packet_handler_state = CHECK_IF_DATA_TO_SEND then
+					eth_next_state <= TRIGGER_TCP_TX2;
+				end if;
+			when TRIGGER_TCP_TX2 =>
+				if tx_packet_ready_for_transmission = '1' then
 					eth_next_state <= PRE_TX_TRANSMIT0;
 				end if;
 				
@@ -984,6 +1003,24 @@ begin
 					eth_next_state <= HANDLE_TX_TRANSMIT17;
 				end if;
 			when HANDLE_TX_TRANSMIT17 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT18;
+			when HANDLE_TX_TRANSMIT18 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT19;
+				end if;
+			when HANDLE_TX_TRANSMIT19 =>
+				eth_next_state <= HANDLE_TX_TRANSMIT20;
+			when HANDLE_TX_TRANSMIT20 =>
+				if spi_oper_cmplt = '1' then
+					eth_next_state <= HANDLE_TX_TRANSMIT21;
+				end if;
+			when HANDLE_TX_TRANSMIT21 =>
+				if spi_data_rd(3) = '1' then -- TX has completed
+					eth_next_state <= HANDLE_TX_TRANSMIT22;
+				else
+					eth_next_state <= HANDLE_TX_TRANSMIT19;
+				end if;
+			when HANDLE_TX_TRANSMIT22 =>
 				eth_next_state <= IDLE;
 				
 			when HANDLE_TX_TRANSMIT_PREV0 =>
@@ -1035,7 +1072,11 @@ begin
 					eth_next_state <= HANDLE_TX_TRANSMIT_PREV16;
 				end if;
 			when HANDLE_TX_TRANSMIT_PREV16 =>
-				eth_next_state <= IDLE;
+				eth_next_state <= WAIT_FOR_TRANSMIT_CMPLT;
+			when WAIT_FOR_TRANSMIT_CMPLT =>
+				if tx_timeout_counter = '0'&X"00000" then
+					eth_next_state <= PRE_TX_TRANSMIT0;
+				end if;
 
 			when RESEND_ACK_IN_BUFFER =>
 				eth_next_state <= HANDLE_TX_TRANSMIT15;
@@ -1078,7 +1119,7 @@ begin
 			elsif eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				tcp_connect_waiting <= '0';
 			end if;
-			if eth_state = TRIGGER_TCP_TX or tx_data_packet_req_ack = '1' then
+			if eth_state = TRIGGER_TCP_TX0 or tx_data_packet_req_ack = '1' then
 				tcp_data_flush_waiting <= '0';
 			elsif tcp_wr_data_flush = '1' and tcp_connection_active = '1' then
 				tcp_data_flush_waiting <= '1';
@@ -1088,9 +1129,11 @@ begin
 			else
 				large_tx_packet_waiting <= '0';
 			end if;
-			if DEBUG_IN(2) = '1' then
+			if trigger_resend_tx_packet = '1' then
 				send_prev_packet_waiting <= '1';
-			elsif eth_state = HANDLE_TX_TRANSMIT_PREV16 then
+			elsif packet_handler_state = RESEND_TX_PACKETS then
+				send_prev_packet_waiting <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT_PREV0 then
 				send_prev_packet_waiting <= '0';
 			end if;
 		end if;
@@ -1197,6 +1240,8 @@ begin
 				spi_we <= '1';
 			elsif eth_state = HANDLE_TX_TRANSMIT15 then
 				spi_we <= '1';
+			elsif eth_state = HANDLE_TX_TRANSMIT17 then
+				spi_we <= '1';
 			elsif eth_state = HANDLE_TX_TRANSMIT_PREV0 then
 				spi_we <= '1';
 			elsif eth_state = HANDLE_TX_TRANSMIT_PREV2 then
@@ -1261,6 +1306,8 @@ begin
 			elsif eth_state = HANDLE_TX_TRANSMIT13 then
 				spi_wr_addr <= X"47";
 			elsif eth_state = HANDLE_TX_TRANSMIT15 then
+				spi_wr_addr <= X"BC";
+			elsif eth_state = HANDLE_TX_TRANSMIT17 then
 				spi_wr_addr <= X"9F";
 			elsif eth_state = HANDLE_TX_TRANSMIT_PREV0 then
 				spi_wr_addr <= X"BF";
@@ -1327,6 +1374,8 @@ begin
 				spi_wr_data <= slv(tx_packet_end_pointer(15 downto 8));
 			elsif eth_state = HANDLE_TX_TRANSMIT15 then
 				spi_wr_data <= X"08";
+			elsif eth_state = HANDLE_TX_TRANSMIT17 then
+				spi_wr_data <= X"08";
 			elsif eth_state = HANDLE_TX_TRANSMIT_PREV0 then
 				spi_wr_data <= X"03";
 			elsif eth_state = HANDLE_TX_TRANSMIT_PREV2 then
@@ -1369,6 +1418,8 @@ begin
 				spi_rd_addr <= X"3A";
 			elsif eth_state = COPY_RX_PACKET_TO_BUF1 then
 				spi_rd_addr <= X"3A";
+			elsif eth_state = HANDLE_TX_TRANSMIT19 then
+				spi_rd_addr <= X"1C";
 			end if;
       end if;
    end process;
@@ -1384,7 +1435,8 @@ begin
 				spi_rd <= '1';
 			elsif eth_state = COPY_RX_PACKET_TO_BUF1 then
 				spi_rd <= '1';
-
+			elsif eth_state = HANDLE_TX_TRANSMIT19 then
+				spi_rd <= '1';
 			else
 				spi_rd <= '0';
 			end if;
@@ -1421,7 +1473,7 @@ begin
 
 	handle_rx_packet <= '1' when eth_state = COPY_RX_PACKET_TO_BUF6 else '0';
 	trigger_ack <= '1' when eth_state = TRIGGER_ACK_PACKET else '0';
-	handle_tx_packet <= '1' when eth_state = TRIGGER_TCP_TX else '0';
+	handle_tx_packet <= '1' when eth_state = TRIGGER_TCP_TX1 else '0';
 	
 	process(CLK_IN)
    begin
@@ -1922,7 +1974,7 @@ begin
 				if tcp_sequence_number = unsigned(rx_tcp_ack_number) then
 					packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET1;
 				else
-					packet_handler_next_state <= RESEND_ACK; -- ACK failed to reach target, resend
+					packet_handler_next_state <= RESEND_TX_PACKETS; -- TX packets failed to reach destination, resend
 				end if;
 			when CHECK_TCP_PSH_ACK_PACKET1 =>
 				if tcp_acknowledge_number = unsigned(rx_tcp_seq_number) then
@@ -1958,6 +2010,8 @@ begin
 				end if;
 
 			when RESEND_ACK =>
+				packet_handler_next_state <= COMPLETE;
+			when RESEND_TX_PACKETS =>
 				packet_handler_next_state <= COMPLETE;
 			
 			when CHECK_IF_DATA_TO_SEND =>
@@ -2671,39 +2725,44 @@ begin
 			if packet_handler_state = TRIGGER_TCP_PSH_ACK1 then
 				tx_total_packet_length_checksum <= tx_bytes_to_send + X"022"; --  TCP Header length (28 Bytes) + Protocol (value=6)
 			end if;
-			if packet_handler_state = TRIGGER_TCP_PSH_ACK3 then
+			if packet_handler_state = TRIGGER_TCP_PSH_ACK3 and next_tx_packet_req_ack = '1' then
 				tx_data_packet_req_ack <= '1';
 			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
 				tx_data_packet_req_ack <= '0';
+			end if;
+			if packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
+				next_tx_packet_req_ack <= '0';
+			elsif packet_handler_state = TRIGGER_TCP_PSH_ACK3 then
+				next_tx_packet_req_ack <= '1';
 			end if;
 			if tx_data_packet_req_ack = '0' then
 				tx_packet_ack_timeout <= C_200ms;
 			else
 				tx_packet_ack_timeout <= tx_packet_ack_timeout - 1;
 			end if;
-			if tx_data_packet_req_ack = '0' then
-				tx_packet_ack_timeout_occur <= X"0";
-			elsif tx_packet_ack_timeout = '0'&X"000000" then
-				if tx_packet_ack_timeout_occur /= X"F" then
-					tx_packet_ack_timeout_occur <= tx_packet_ack_timeout_occur + 1;
-				end if;
-			end if;
-			tx_packet_ack_timeout_occur_prev <= tx_packet_ack_timeout_occur;
-			if tx_packet_ack_timeout_occur_prev /= tx_packet_ack_timeout_occur then
-				if tx_packet_ack_timeout_occur = X"2" then
-					trigger_resend_tx_packet <= '1';
-				elsif tx_packet_ack_timeout_occur = X"4" then
-					trigger_resend_tx_packet <= '1';
-				elsif tx_packet_ack_timeout_occur = X"8" then
-					trigger_resend_tx_packet <= '1';
-				elsif tx_packet_ack_timeout_occur = X"F" then
-					trigger_resend_tx_packet <= '1';
-				else
-					trigger_resend_tx_packet <= '0';
-				end if;
-			else
-				trigger_resend_tx_packet <= '0';
-			end if;
+--			if tx_data_packet_req_ack = '0' then
+--				tx_packet_ack_timeout_occur <= X"0";
+--			elsif tx_packet_ack_timeout = '0'&X"000000" then
+--				if tx_packet_ack_timeout_occur /= X"F" then
+--					tx_packet_ack_timeout_occur <= tx_packet_ack_timeout_occur + 1;
+--				end if;
+--			end if;
+--			tx_packet_ack_timeout_occur_prev <= tx_packet_ack_timeout_occur;
+--			if tx_packet_ack_timeout_occur_prev /= tx_packet_ack_timeout_occur then
+--				if tx_packet_ack_timeout_occur = X"2" then
+--					trigger_resend_tx_packet <= '1';
+--				elsif tx_packet_ack_timeout_occur = X"4" then
+--					trigger_resend_tx_packet <= '1';
+--				elsif tx_packet_ack_timeout_occur = X"8" then
+--					trigger_resend_tx_packet <= '1';
+--				elsif tx_packet_ack_timeout_occur = X"F" then
+--					trigger_resend_tx_packet <= '1';
+--				else
+--					trigger_resend_tx_packet <= '0';
+--				end if;
+--			else
+--				trigger_resend_tx_packet <= '0';
+--			end if;
 		end if;
 	end process;
 	
@@ -2798,7 +2857,7 @@ begin
 			end if;
 			if tx_packet_state = COMPLETE then
 				tx_packet_ready_for_transmission <= '1';
-			elsif eth_state = HANDLE_TX_TRANSMIT17 then
+			elsif eth_state = HANDLE_TX_TRANSMIT22 then
 				tx_packet_ready_for_transmission <= '0';
 			end if;
 			if tx_packet_state = SET_RX_PACKET_ADDR_LOWER_BYTE then
@@ -2818,8 +2877,13 @@ begin
 	process(CLK_IN)
 	begin
 		if rising_edge(CLK_IN) then
-			if eth_state = HANDLE_TX_TRANSMIT17 then
+			if eth_state = HANDLE_TX_TRANSMIT22 or eth_state = HANDLE_TX_TRANSMIT_PREV16 then
 				tx_base_addr_select <= not(tx_base_addr_select);
+			end if;
+			if eth_state = WAIT_FOR_TRANSMIT_CMPLT then
+				tx_timeout_counter <= tx_timeout_counter - 1;
+			else
+				tx_timeout_counter <= C_20ms;
 			end if;
 		end if;
 	end process;	
@@ -2978,9 +3042,21 @@ begin
 		 data_count 	=> tcp_rd_data_count);
 
 --------------------- TCP TX DATA ----------------------------
+	
+	process(CLK_IN)
+	begin
+		if rising_edge(CLK_IN) then
+			if tcp_wr_data_count < X"FA0" then
+				tcp_wr_data_possible <= '1';
+			else
+				tcp_wr_data_possible <= '0';
+			end if;
+		end if;
+	end process;
 
-	TCP_WR_DATA_POSSIBLE_OUT <= not(tcp_wr_data_fifo_full);
-	tcp_wr_data_en <= TCP_WR_DATA_EN_IN and not(tcp_wr_data_fifo_full);
+	TCP_WR_DATA_POSSIBLE_OUT <= tcp_wr_data_possible;
+	
+	tcp_wr_data_en <= TCP_WR_DATA_EN_IN when tcp_wr_data_possible = '1' else '0';
 	tcp_wr_data <= TCP_WR_DATA_IN;
 	tcp_wr_data_flush <= TCP_WR_DATA_FLUSH_IN;
 	tcp_tx_data_rd <= '1' when (tx_packet_state = LOAD_TX_PACKET_DATA) or (tx_packet_state = INIT_LOAD_TX_PACKET_DATA) else '0'; -- TODO or previous state = LOAD_TX_PACKET_DATA
@@ -2993,7 +3069,7 @@ begin
 		 rd_en 			=> tcp_tx_data_rd,
 		 dout 			=> tcp_tx_data,
 		 full 			=> open,
-		 almost_full 	=> tcp_wr_data_fifo_full,
+		 almost_full 	=> open,
 		 empty 			=> open,
 		 data_count 	=> tcp_wr_data_count);
 

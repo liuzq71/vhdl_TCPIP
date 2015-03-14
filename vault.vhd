@@ -173,9 +173,9 @@ signal eth_command_en, eth_command_cmplt : std_logic;
 	
 signal sdi_buf, sdo_buf, sclk_buf, sclk_buf_n, sclk_oddr, cs_buf : std_logic;
 
-signal clk_div_counter : unsigned(19 downto 0);
+signal clk_div_counter : unsigned(7 downto 0) := (others => '0');
 signal tcp_rd_en, tcp_rd_en_p, tcp_rd_data_avail : std_logic;
-signal tcp_wr_en, tcp_wr_possible : std_logic;
+signal tcp_wr_en, tcp_wr_possible, wr_en : std_logic := '0';
 signal check_rd_data : std_logic;
 signal tcp_data_rd : std_logic_vector(7 downto 0);
 signal tcp_data_wr : unsigned(7 downto 0) := X"00";
@@ -326,23 +326,20 @@ begin
 			end if;
 		end process;
 
-		tcp_wr_en <= buttons_edge(0);
-
 		process(clk_100MHz)
 		begin
 			if rising_edge(clk_100MHz) then
---				if clk_div_counter = X"00000" then
---					clk_div_counter <= unsigned(SW_IN);
---				else
+				if clk_div_counter = X"00" then
+					clk_div_counter <= unsigned(SW_IN);
+				else
 					clk_div_counter <= clk_div_counter - 1;
---				end if;
---				if clk_div_counter = X"00" and tcp_rd_data_avail = '1' then
-				if clk_div_counter = X"00000" and tcp_wr_possible = '1' and buttons(0) = '0' then
+				end if;
+				if clk_div_counter = X"00" and tcp_wr_possible = '1' and buttons(0) = '0' then
 --					tcp_rd_en <= '1';
---					tcp_wr_en <= '1';
+					tcp_wr_en <= '1';
 				else
 --					tcp_rd_en <= '0';
---					tcp_wr_en <= '0';
+					tcp_wr_en <= '0';
 				end if;
 				if tcp_rd_en = '1' then
 					tcp_data_rd_p <= unsigned(tcp_data_rd);
