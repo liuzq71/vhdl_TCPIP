@@ -252,8 +252,7 @@ signal prev_tx_packet_end_pointer :unsigned(15 downto 0);
 signal doing_tx_packet_config, tx_packet_frame_data_rd : std_logic := '0';
 signal packet_instruction, packet_data : std_logic_vector(7 downto 0);
 signal tx_packet_ready_for_transmission : std_logic := '0';
-signal send_prev_packet_waiting : std_logic := '0';
-signal debug0_waiting : std_logic := '0';
+signal send_prev_packet_waiting, trigger_send_prev_packet : std_logic := '0';
 signal tx_base_addr, tx_base_addr_prev : unsigned(15 downto 0);
 signal tx_base_addr_select : std_logic := '0';
 
@@ -329,10 +328,9 @@ signal large_tx_packet_waiting : std_logic := '0';
 signal tcp_wr_data, tcp_tx_data : std_logic_vector(7 downto 0) := (others => '0');
 signal tx_bytes_to_send, tx_total_packet_length, tx_packet_data_counter : unsigned(11 downto 0) := (others => '0');
 signal tx_total_packet_length_inc_mac, tx_total_packet_length_checksum 	: unsigned(11 downto 0) := (others => '0');
-signal tx_data_packet_req_ack, trigger_resend_tx_packet, next_tx_packet_req_ack : std_logic := '0';
-signal tx_packet_ack_timeout : unsigned(24 downto 0) := C_200ms;
-signal tx_packet_ack_timeout_occur, tx_packet_ack_timeout_occur_prev : unsigned(3 downto 0) := X"0";
+signal tx_packet_no_ack_timeout : unsigned(24 downto 0) := C_200ms;
 signal tx_timeout_counter : unsigned(20 downto 0);
+signal tx_packets_no_ack : unsigned(3 downto 0) := X"0";
 
 signal clk_1hz, clk_1hz_prev : std_logic := '0';
 signal init_enc28j60_waiting, dhcp_connect_waiting, tcp_connect_waiting : std_logic := '0';
@@ -415,6 +413,7 @@ type ETH_ST is (	IDLE,
 						HANDLE_TX_TRANSMIT8,
 						HANDLE_TX_TRANSMIT9,
 						HANDLE_TX_TRANSMIT10,
+						HANDLE_TX_TRANSMIT_PRE11,
 						HANDLE_TX_TRANSMIT11,
 						HANDLE_TX_TRANSMIT12,
 						HANDLE_TX_TRANSMIT13,
@@ -427,7 +426,6 @@ type ETH_ST is (	IDLE,
 						HANDLE_TX_TRANSMIT20,
 						HANDLE_TX_TRANSMIT21,
 						HANDLE_TX_TRANSMIT22,
-						HANDLE_TX_TRANSMIT_PRE11,
 						HANDLE_TX_TRANSMIT_PREV0,
 						HANDLE_TX_TRANSMIT_PREV1,
 						HANDLE_TX_TRANSMIT_PREV2,
@@ -592,7 +590,6 @@ type PACKET_HANDLER_ST is (	IDLE,
 										TRIGGER_TCP_ACK2,
 										TRIGGER_TCP_ACK3,
 										RESEND_ACK,
-										RESEND_TX_PACKETS,
 										CHECK_IF_DATA_TO_SEND,
 										TRIGGER_TCP_PSH_ACK0,
 										TRIGGER_TCP_PSH_ACK1,
@@ -703,7 +700,7 @@ begin
 	INT_PROC: process(CLK_IN)
    begin
       if rising_edge(CLK_IN) then
-			if eth_state = HANDLE_TX_INTERRUPT0 then
+			if eth_state = HANDLE_TX_TRANSMIT_PREV0 then
 				interrupt_counter <= interrupt_counter + 1;
 			end if;
 		end if;
@@ -905,13 +902,14 @@ begin
 				end if;
 				
 			when TRIGGER_TCP_TX0 =>
-				if tcp_wr_data_count = X"000" or tx_data_packet_req_ack = '1' then
+				if tcp_wr_data_count = X"000" or tx_packets_no_ack > X"1" then
 					eth_next_state <= IDLE;
 				else
 					eth_next_state <= TRIGGER_TCP_TX1;
 				end if;
 			when TRIGGER_TCP_TX1 =>
 				if packet_handler_state = CHECK_IF_DATA_TO_SEND then
+				--if packet_handler_state = TRIGGER_TCP_PSH_ACK2 then -- TODO Timeout here (in case of window size?)
 					eth_next_state <= TRIGGER_TCP_TX2;
 				end if;
 			when TRIGGER_TCP_TX2 =>
@@ -1119,19 +1117,17 @@ begin
 			elsif eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				tcp_connect_waiting <= '0';
 			end if;
-			if eth_state = TRIGGER_TCP_TX0 or tx_data_packet_req_ack = '1' then
+			if eth_state = TRIGGER_TCP_TX0 or tx_packets_no_ack > X"1" then
 				tcp_data_flush_waiting <= '0';
 			elsif tcp_wr_data_flush = '1' and tcp_connection_active = '1' then
 				tcp_data_flush_waiting <= '1';
 			end if;
-			if unsigned(tcp_wr_data_count) > X"580" and tcp_connection_active = '1' and tx_data_packet_req_ack = '0' then
-				large_tx_packet_waiting <= '1';
-			else
+			if unsigned(tcp_wr_data_count) < X"580" or tcp_connection_active = '0' or tx_packets_no_ack > X"1" then
 				large_tx_packet_waiting <= '0';
+			else
+				large_tx_packet_waiting <= '1';
 			end if;
-			if trigger_resend_tx_packet = '1' then
-				send_prev_packet_waiting <= '1';
-			elsif packet_handler_state = RESEND_TX_PACKETS then
+			if trigger_send_prev_packet = '1' then
 				send_prev_packet_waiting <= '1';
 			elsif eth_state = HANDLE_TX_TRANSMIT_PREV0 then
 				send_prev_packet_waiting <= '0';
@@ -1974,7 +1970,7 @@ begin
 				if tcp_sequence_number = unsigned(rx_tcp_ack_number) then
 					packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET1;
 				else
-					packet_handler_next_state <= RESEND_TX_PACKETS; -- TX packets failed to reach destination, resend
+					packet_handler_next_state <= COMPLETE;
 				end if;
 			when CHECK_TCP_PSH_ACK_PACKET1 =>
 				if tcp_acknowledge_number = unsigned(rx_tcp_seq_number) then
@@ -2010,8 +2006,6 @@ begin
 				end if;
 
 			when RESEND_ACK =>
-				packet_handler_next_state <= COMPLETE;
-			when RESEND_TX_PACKETS =>
 				packet_handler_next_state <= COMPLETE;
 			
 			when CHECK_IF_DATA_TO_SEND =>
@@ -2725,44 +2719,23 @@ begin
 			if packet_handler_state = TRIGGER_TCP_PSH_ACK1 then
 				tx_total_packet_length_checksum <= tx_bytes_to_send + X"022"; --  TCP Header length (28 Bytes) + Protocol (value=6)
 			end if;
-			if packet_handler_state = TRIGGER_TCP_PSH_ACK3 and next_tx_packet_req_ack = '1' then
-				tx_data_packet_req_ack <= '1';
+			-- TODO need to 'lock' tx logic (so previous tx packet isn't overwritten by arp or something)
+			-- Can be achieved by only responding to TCP packets when tx_packet_no_ack_timeout > X"1"
+			if packet_handler_state = TRIGGER_TCP_PSH_ACK3 then
+				tx_packets_no_ack <= tx_packets_no_ack + 1;
 			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
-				tx_data_packet_req_ack <= '0';
+				tx_packets_no_ack <= X"0";
 			end if;
-			if packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
-				next_tx_packet_req_ack <= '0';
-			elsif packet_handler_state = TRIGGER_TCP_PSH_ACK3 then
-				next_tx_packet_req_ack <= '1';
-			end if;
-			if tx_data_packet_req_ack = '0' then
-				tx_packet_ack_timeout <= C_200ms;
+			if tx_packets_no_ack > X"1" then
+				tx_packet_no_ack_timeout <= tx_packet_no_ack_timeout - 1;
 			else
-				tx_packet_ack_timeout <= tx_packet_ack_timeout - 1;
+				tx_packet_no_ack_timeout <= C_200ms;
 			end if;
---			if tx_data_packet_req_ack = '0' then
---				tx_packet_ack_timeout_occur <= X"0";
---			elsif tx_packet_ack_timeout = '0'&X"000000" then
---				if tx_packet_ack_timeout_occur /= X"F" then
---					tx_packet_ack_timeout_occur <= tx_packet_ack_timeout_occur + 1;
---				end if;
---			end if;
---			tx_packet_ack_timeout_occur_prev <= tx_packet_ack_timeout_occur;
---			if tx_packet_ack_timeout_occur_prev /= tx_packet_ack_timeout_occur then
---				if tx_packet_ack_timeout_occur = X"2" then
---					trigger_resend_tx_packet <= '1';
---				elsif tx_packet_ack_timeout_occur = X"4" then
---					trigger_resend_tx_packet <= '1';
---				elsif tx_packet_ack_timeout_occur = X"8" then
---					trigger_resend_tx_packet <= '1';
---				elsif tx_packet_ack_timeout_occur = X"F" then
---					trigger_resend_tx_packet <= '1';
---				else
---					trigger_resend_tx_packet <= '0';
---				end if;
---			else
---				trigger_resend_tx_packet <= '0';
---			end if;
+			if tx_packet_no_ack_timeout = '0'&X"000000" then
+				trigger_send_prev_packet <= '1';
+			else
+				trigger_send_prev_packet <= '0';
+			end if;
 		end if;
 	end process;
 	
@@ -3042,19 +3015,9 @@ begin
 		 data_count 	=> tcp_rd_data_count);
 
 --------------------- TCP TX DATA ----------------------------
-	
-	process(CLK_IN)
-	begin
-		if rising_edge(CLK_IN) then
-			if tcp_wr_data_count < X"FA0" then
-				tcp_wr_data_possible <= '1';
-			else
-				tcp_wr_data_possible <= '0';
-			end if;
-		end if;
-	end process;
 
 	TCP_WR_DATA_POSSIBLE_OUT <= tcp_wr_data_possible;
+	tcp_wr_data_possible <= '1' when tcp_wr_data_count < X"FA0" else '0';
 	
 	tcp_wr_data_en <= TCP_WR_DATA_EN_IN when tcp_wr_data_possible = '1' else '0';
 	tcp_wr_data <= TCP_WR_DATA_IN;

@@ -45,7 +45,9 @@ entity vault is
 				SD_MISO_IN	: in  STD_LOGIC;
 				SD_MOSI_OUT	: out  STD_LOGIC;
 				SD_CLK_OUT	: out  STD_LOGIC;
-				SD_CS_OUT	: out  STD_LOGIC);
+				SD_CS_OUT	: out  STD_LOGIC;
+				
+				TEST_RF_OUT	: out STD_LOGIC);
 end vault;
 
 architecture Behavioral of vault is
@@ -174,6 +176,7 @@ signal eth_command_en, eth_command_cmplt : std_logic;
 signal sdi_buf, sdo_buf, sclk_buf, sclk_buf_n, sclk_oddr, cs_buf : std_logic;
 
 signal clk_div_counter : unsigned(7 downto 0) := (others => '0');
+signal test_rf_counter : unsigned(15 downto 0) := (others => '0');
 signal tcp_rd_en, tcp_rd_en_p, tcp_rd_data_avail : std_logic;
 signal tcp_wr_en, tcp_wr_possible, wr_en : std_logic := '0';
 signal check_rd_data : std_logic;
@@ -186,6 +189,7 @@ signal busy_o, hndshk_i, hndshk_o, wr_i : std_logic;
 signal wr_counter : unsigned(11 downto 0) := (others => '0');
 signal data_i : unsigned(7 downto 0) := (others => '0');
 signal addr_i : unsigned(31 downto 0) := (others => '0');
+signal test_rf : std_logic;
 
 type SD_ST is (	IDLE,
 						INIT_WR,
@@ -322,6 +326,23 @@ begin
 			if rising_edge(clk_100MHz) then
 				if tcp_wr_en = '1' then
 					tcp_data_wr <= tcp_data_wr + 1;
+				end if;
+			end if;
+		end process;
+		
+		
+		TEST_RF_OUT <= test_rf;
+		
+		process(clk_100MHz)
+		begin
+			if rising_edge(clk_100MHz) then
+				test_rf_counter <= test_rf_counter - 1;
+				if buttons(2) = '0' then
+					if test_rf_counter = X"0000" then
+						test_rf <= not(test_rf);
+					end if;
+				else
+					test_rf <= '1';
 				end if;
 			end if;
 		end process;
