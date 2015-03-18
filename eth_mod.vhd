@@ -33,7 +33,6 @@ entity eth_mod is
 			  -- Command interface
 			  INIT_ENC28J60 	: in 	STD_LOGIC;
 			  DHCP_CONNECT 	: in 	STD_LOGIC;
-			  TCP_CONNECT 		: in 	STD_LOGIC;
 			  ERROR_OUT 		: out  STD_LOGIC_VECTOR (7 downto 0);
 			  
 			  -- Data Interface
@@ -185,7 +184,7 @@ constant C_IPV4_Protocol_Number	: std_logic_vector(3 downto 0) := X"4";
 constant C_DHCP_Source_Port		: std_logic_vector(15 downto 0) := X"0043";
 constant C_DHCP_Dest_Port			: std_logic_vector(15 downto 0) := X"0044";
 constant C_dhcp_magic_cookie		: std_logic_vector(31 downto 0) := X"63825363";
-constant C_tcp_syn_flags			: std_logic_vector(7 downto 0) := X"02";
+constant C_tcp_syn_ack_flags		: std_logic_vector(7 downto 0) := X"12";
 constant C_tcp_ack_flags			: std_logic_vector(7 downto 0) := X"10";
 constant C_tcp_fin_ack_flags		: std_logic_vector(7 downto 0) := X"11";
 constant C_tcp_psh_ack_flags		: std_logic_vector(7 downto 0) := X"18";
@@ -293,8 +292,8 @@ signal dhcp_option, dhcp_option_length, dhcp_message_type : std_logic_vector(7 d
 signal packet_definition_addr : std_logic_vector(10 downto 0);
 signal packet_definition_data : std_logic_vector(15 downto 0);
 
-signal tcp_port 		: std_logic_vector(15 downto 0) := (others => '0');
-signal server_port 	: std_logic_vector(15 downto 0) := X"0DA2";
+signal client_port 	: std_logic_vector(15 downto 0) := (others => '0');
+signal listen_port 	: std_logic_vector(15 downto 0) := X"0DA2";
 signal tcp_sequence_number, tcp_acknowledge_number : unsigned(31 downto 0) := (others => '0');
 signal tcp_sequence_number_previous_ack, tcp_ack_number_previous_ack : unsigned(31 downto 0) := (others => '0');
 signal tcp_ack_number_previous_ack1, tcp_ack_number_previous_ack2, tcp_ack_number_previous_ack3 : unsigned(31 downto 0) := (others => '0');
@@ -303,7 +302,7 @@ signal tcp_sequence_number_p1 : unsigned(31 downto 0) := (others => '0');
 signal tcp_flags : std_logic_vector(7 downto 0) := (others => '0');
 signal window_size : unsigned(11 downto 0) := X"E00";
 signal requested_data_size : unsigned(11 downto 0);
-signal send_tcp_svn_packet, send_tcp_ack_packet, cancel_dhcp_connect : std_logic := '0';
+signal send_tcp_ack_packet, cancel_dhcp_connect : std_logic := '0';
 signal send_tcp_tx_packet : std_logic := '0';
 signal tcp_connection_active, close_tcp_connection, cancel_tcp_connection : std_logic := '0';
 signal tcp_ip_identification : unsigned(15 downto 0);
@@ -318,7 +317,8 @@ signal rx_tcp_window_shift : std_logic_vector(3 downto 0);
 signal tcp_option_addr, next_protocol_start_addr : unsigned(10 downto 0);
 signal rx_data_length, prev_rx_data_length : unsigned(15 downto 0);
 signal rx_data_start_addr : unsigned(10 downto 0);
-signal resend_ack_packet, fin_received : std_logic := '0';
+signal resend_ack_packet, fin_received, syn_ack_packet : std_logic := '0';
+signal fin_received_p, trigger_fin_ack : std_logic := '0';
 
 signal tcp_rx_data_we, tcp_rd_data_available, tcp_data_rd_en : std_logic := '0';
 signal tcp_rx_ram_almost_full : std_logic := '0';
@@ -348,7 +348,6 @@ signal num_packets : std_logic_vector(7 downto 0) := (others => '0');
 type ETH_ST is (	IDLE,
 						TRIGGER_DHCP_DISCOVER,
 						TRIGGER_ARP_REQUEST,
-						TRIGGER_NEW_TCP_CONNECTION,
 						TRIGGER_CANCEL_DHCP_CONNECT,
 						TRIGGER_CLOSE_TCP_CONNECTION,
 						TRIGGER_CANCEL_TCP_CONNECTION,
@@ -582,9 +581,7 @@ type PACKET_HANDLER_ST is (	IDLE,
 										PARSE_TCP_PACKET25,
 										PARSE_TCP_PACKET26,
 										PARSE_TCP_PACKET27,
-										CHECK_TCP_SYN_ACK_PACKET0,
-										CHECK_TCP_SYN_ACK_PACKET1,
-										CHECK_TCP_SYN_ACK_PACKET2,
+										CHECK_TCP_SYN_PACKET0,
 										CHECK_TCP_PSH_ACK_PACKET0,
 										CHECK_TCP_PSH_ACK_PACKET1,
 										CHECK_TCP_PSH_ACK_PACKET2,
@@ -706,7 +703,7 @@ begin
 	INT_PROC: process(CLK_IN)
    begin
       if rising_edge(CLK_IN) then
-			if packet_handler_state = RX_TCP_WINDOW_TOO_SMALL then
+			if packet_handler_state = CHECK_TCP_SYN_PACKET0 then
 				interrupt_counter <= interrupt_counter + 1;
 			end if;
 		end if;
@@ -731,8 +728,6 @@ begin
 					eth_next_state <= HANDLE_INIT_CMND0;
 				elsif dhcp_connect_waiting = '1' then
 					eth_next_state <= TRIGGER_DHCP_DISCOVER;
-				elsif tcp_connect_waiting = '1' then
-					eth_next_state <= TRIGGER_NEW_TCP_CONNECTION;
 				elsif send_prev_packet_waiting = '1' then
 					eth_next_state <= HANDLE_TX_TRANSMIT_PREV0;
 				elsif resend_ack_packet = '1' then
@@ -777,8 +772,6 @@ begin
 			when TRIGGER_DHCP_DISCOVER =>
 				eth_next_state <= IDLE;
 			when TRIGGER_ARP_REQUEST =>
-				eth_next_state <= IDLE;
-			when TRIGGER_NEW_TCP_CONNECTION =>
 				eth_next_state <= IDLE;
 			when TRIGGER_CANCEL_DHCP_CONNECT =>
 				eth_next_state <= IDLE;
@@ -1118,11 +1111,6 @@ begin
 				dhcp_connect_waiting <= '1';
 			elsif eth_state = TRIGGER_DHCP_DISCOVER then
 				dhcp_connect_waiting <= '0';
-			end if;
-			if TCP_CONNECT = '1' then
-				tcp_connect_waiting <= '1';
-			elsif eth_state = TRIGGER_NEW_TCP_CONNECTION then
-				tcp_connect_waiting <= '0';
 			end if;
 			if eth_state = TRIGGER_TCP_TX0 or tx_packets_no_ack > X"1" 
 					or wait_for_tcp_window_size_update = '1' then
@@ -1548,7 +1536,6 @@ begin
 	
 	send_arp_request <= '1' when eth_state = TRIGGER_ARP_REQUEST else '0';
 	send_dhcp_discover <= '1' when eth_state = TRIGGER_DHCP_DISCOVER else '0';
-	send_tcp_svn_packet <= '1' when eth_state = TRIGGER_NEW_TCP_CONNECTION else '0';
 	cancel_dhcp_connect <= '1' when eth_state = TRIGGER_CANCEL_DHCP_CONNECT else '0';
 	close_tcp_connection <= '1' when eth_state = TRIGGER_CLOSE_TCP_CONNECTION else '0';
 	cancel_tcp_connection <= '1' when eth_state = TRIGGER_CANCEL_TCP_CONNECTION else '0';
@@ -1560,7 +1547,7 @@ begin
 															ip_packet_length, udp_source_port, udp_dest_port, dhcp_transaction_id, transaction_id_rd,
 																dhcp_magic_cookie, dhcp_option, dhcp_option_length, dhcp_option_addr, expecting_syn_ack,
 																	dhcp_message_type, expecting_dhcp_offer, expecting_dhcp_ack, rx_tcp_source_port,
-																		server_port, rx_tcp_dest_port, tcp_port, ping_enable, rx_tcp_header_length, tcp_sequence_number_p1, 
+																		listen_port, rx_tcp_dest_port, client_port, ping_enable, rx_tcp_header_length, tcp_sequence_number_p1, 
 																			rx_tcp_ack_number, tcp_sequence_number, tcp_acknowledge_number, rx_tcp_seq_number, rx_packet_ram_rd_addr,
 																				tx_packet_state)
    begin
@@ -1889,13 +1876,13 @@ begin
 			when PARSE_TCP_PACKET4 =>
 				packet_handler_next_state <= PARSE_TCP_PACKET5;
 			when PARSE_TCP_PACKET5 =>
-				if rx_tcp_source_port = server_port then
+				if rx_tcp_source_port = client_port then
 					packet_handler_next_state <= PARSE_TCP_PACKET6;
 				else
 					packet_handler_next_state <= COMPLETE;
 				end if;
 			when PARSE_TCP_PACKET6 =>
-				if rx_tcp_dest_port = tcp_port then
+				if rx_tcp_dest_port = listen_port then
 					packet_handler_next_state <= PARSE_TCP_PACKET7;
 				else
 					packet_handler_next_state <= COMPLETE;
@@ -1925,7 +1912,7 @@ begin
 			when PARSE_TCP_PACKET18 =>
 				packet_handler_next_state <= PARSE_TCP_PACKET19;	
 			when PARSE_TCP_PACKET19 =>
-				if rx_tcp_flags(4 downto 0) = "1"&X"2" then -- SYN-ACK PACKET (READ OPTIONS)
+				if rx_tcp_flags(4 downto 1) = X"1" and tcp_connection_active = '0' then -- SYN PACKET (READ OPTIONS)
 					packet_handler_next_state <= PARSE_TCP_PACKET20;
 				else
 					packet_handler_next_state <= PARSE_TCP_PACKET25;
@@ -1949,8 +1936,8 @@ begin
 					packet_handler_next_state <= PARSE_TCP_PACKET27;
 				end if;
 			when PARSE_TCP_PACKET25 =>
-				if rx_tcp_flags(4 downto 1) = X"9" and expecting_syn_ack = '1' then
-					packet_handler_next_state <= CHECK_TCP_SYN_ACK_PACKET0;
+				if rx_tcp_flags(4 downto 1) = X"1" and tcp_connection_active = '0' then
+					packet_handler_next_state <= CHECK_TCP_SYN_PACKET0;
 				elsif rx_tcp_flags(4 downto 1) = X"C" or rx_tcp_flags(4 downto 1) = X"8" then
 					packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET0;
 				else
@@ -1964,15 +1951,7 @@ begin
 				else
 					packet_handler_next_state <= PARSE_TCP_PACKET20;
 				end if;
-			when CHECK_TCP_SYN_ACK_PACKET0 =>
-				packet_handler_next_state <= CHECK_TCP_SYN_ACK_PACKET1;
-			when CHECK_TCP_SYN_ACK_PACKET1 =>
-				if tcp_sequence_number_p1 = unsigned(rx_tcp_ack_number) then
-					packet_handler_next_state <= CHECK_TCP_SYN_ACK_PACKET2;
-				else
-					packet_handler_next_state <= COMPLETE;
-				end if;
-			when CHECK_TCP_SYN_ACK_PACKET2 =>
+			when CHECK_TCP_SYN_PACKET0 =>
 				packet_handler_next_state <= TRIGGER_TCP_ACK0;
 				
 			when CHECK_TCP_PSH_ACK_PACKET0 =>
@@ -2061,6 +2040,8 @@ begin
 				ack_countdown <= ack_countdown - 1;
 			end if;
 			if ack_countdown = X"0001" then
+				ack_required <= '1';
+			elsif trigger_fin_ack = '1' then
 				ack_required <= '1';
 			elsif packet_handler_state = TRIGGER_TCP_ACK0 then
 				ack_required <= '0';
@@ -2412,8 +2393,8 @@ begin
    end process;
 
 	TP_NEXT_STATE_DECODE: process (tx_packet_state, send_arp_reply, send_arp_request, send_icmp_reply, 
-												send_dhcp_discover, send_dhcp_request, frame_rd_cmplt, send_tcp_svn_packet,
-													send_tcp_ack_packet, cancel_dhcp_connect, close_tcp_connection, cancel_tcp_connection, 
+												send_dhcp_discover, send_dhcp_request, frame_rd_cmplt, send_tcp_ack_packet, 
+													cancel_dhcp_connect, close_tcp_connection, cancel_tcp_connection, 
 														packet_instruction, checksum_calc_done)
    begin
       tx_packet_next_state <= tx_packet_state;  --default is to stay in current state
@@ -2429,8 +2410,6 @@ begin
 					tx_packet_next_state <= INIT_DHCP_DISCOVER_METADATA;
 				elsif send_dhcp_request = '1' then
 					tx_packet_next_state <= INIT_DHCP_REQUEST_METADATA;
-				elsif send_tcp_svn_packet = '1' then
-					tx_packet_next_state <= INIT_TCP_PACKET_METADATA;
 				elsif send_tcp_ack_packet = '1' then
 					tx_packet_next_state <= INIT_TCP_PACKET_METADATA;
 				elsif cancel_dhcp_connect = '1' then
@@ -2637,10 +2616,10 @@ begin
 							server_mac_addr(31 downto 24) 				when "011"&X"E",
 							server_mac_addr(39 downto 32) 				when "011"&X"F",
 							server_mac_addr(47 downto 40) 				when "100"&X"0",
-							tcp_port(7 downto 0)								when "100"&X"1",
-							tcp_port(15 downto 8)							when "100"&X"2",
-							server_port(7 downto 0)							when "100"&X"3",
-							server_port(15 downto 8)						when "100"&X"4",
+							listen_port(7 downto 0)							when "100"&X"1",
+							listen_port(15 downto 8)						when "100"&X"2",
+							client_port(7 downto 0)							when "100"&X"3",
+							client_port(15 downto 8)						when "100"&X"4",
 							slv(tcp_sequence_number(7 downto 0))		when "100"&X"5",
 							slv(tcp_sequence_number(15 downto 8))		when "100"&X"6",
 							slv(tcp_sequence_number(23 downto 16))		when "100"&X"7",
@@ -2669,37 +2648,33 @@ begin
 	METADATA_PTOC: process(CLK_IN)
 	begin
 		if rising_edge(CLK_IN) then
-			ip_identification <= lfsr_val(15 downto 0);			-- TODO True random?
+			ip_identification <= lfsr_val(15 downto 0);
 			if tx_packet_state = SET_NEW_TRANSACTION_ID then
 				dhcp_transaction_id <= lfsr_val;
 			end if;
-			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
+			if packet_handler_state = CHECK_TCP_SYN_PACKET0 then
 				tcp_ip_identification <= unsigned(lfsr_val(15 downto 0));
 			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET2 then
 				tcp_ip_identification <= tcp_ip_identification + 1;
 			end if;
-			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
-				tcp_port <= lfsr_val(15 downto 0);
+			if packet_handler_state = PARSE_TCP_PACKET4 and tcp_connection_active = '0' then
+				client_port <= rx_tcp_source_port;
 			end if;
-			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
+			if packet_handler_state = CHECK_TCP_SYN_PACKET0 then
 				tcp_sequence_number <= unsigned(lfsr_val);
-			elsif packet_handler_state = CHECK_TCP_SYN_ACK_PACKET2 then
-				tcp_sequence_number <= tcp_sequence_number_p1;
 			elsif packet_handler_state = TRIGGER_TCP_PSH_ACK3 then
 				tcp_sequence_number <= tcp_sequence_number + RESIZE(tx_bytes_to_send, 32);
 			end if;
-			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
-				tcp_acknowledge_number <= (others => '0');
-			elsif packet_handler_state = CHECK_TCP_SYN_ACK_PACKET2 then
+			if packet_handler_state = CHECK_TCP_SYN_PACKET0 then
 				tcp_acknowledge_number <= unsigned(rx_tcp_seq_number) + 1;
 			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET3 then
 				tcp_acknowledge_number <= tcp_acknowledge_number + RESIZE(rx_data_length, 32);
 			end if;
-			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
-				tcp_flags <= C_tcp_syn_flags;
-			elsif packet_handler_state = TRIGGER_TCP_ACK0 then
+			if packet_handler_state = TRIGGER_TCP_ACK0 then
 				if fin_received = '1' then
 					tcp_flags <= C_tcp_fin_ack_flags;
+				elsif syn_ack_packet = '1' then
+					tcp_flags <= C_tcp_syn_ack_flags;
 				else
 					tcp_flags <= C_tcp_ack_flags;
 				end if;
@@ -2711,19 +2686,23 @@ begin
 			elsif packet_handler_state = TRIGGER_TCP_ACK1 then
 				window_size <= X"FFF" - unsigned(tcp_rd_data_count);
 			end if;
-			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
-				expecting_syn_ack <= '1';
-			elsif packet_handler_state = CHECK_TCP_SYN_ACK_PACKET2 then
-				expecting_syn_ack <= '0';
-			elsif tx_packet_state = CANCEL_TCP_CONNECTION_ST then
-				expecting_syn_ack <= '0';
-			end if;
-			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
+			if packet_handler_state = CHECK_TCP_SYN_PACKET0 then
 				fin_received <= '0';
 			elsif rx_tcp_flags(0) = '1' then
 				fin_received <= '1';
 			end if;
-			if packet_handler_state = CHECK_TCP_SYN_ACK_PACKET2 then
+			fin_received_p <= fin_received;
+			if fin_received = '1' and fin_received_p = '0' then
+				trigger_fin_ack <= '1';
+			else
+				trigger_fin_ack <= '0';
+			end if;
+			if packet_handler_state = CHECK_TCP_SYN_PACKET0 then
+				syn_ack_packet <= '1';
+			elsif packet_handler_state = TRIGGER_TCP_ACK0 then
+				syn_ack_packet <= '0';
+			end if;
+			if packet_handler_state = CHECK_TCP_SYN_PACKET0 then -- TODO only after 3rd handshake?
 				tcp_connection_active <= '1';
 			elsif fin_received = '1' then
 				tcp_connection_active <= '0';

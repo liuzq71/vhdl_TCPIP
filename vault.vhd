@@ -81,7 +81,7 @@ architecture Behavioral of vault is
 			  -- Command interface
 			  INIT_ENC28J60 	: in 	STD_LOGIC;
 			  DHCP_CONNECT 	: in 	STD_LOGIC;
-			  TCP_CONNECT 		: in 	STD_LOGIC;
+--			  TCP_CONNECT 		: in 	STD_LOGIC;
 			  ERROR_OUT 		: out  STD_LOGIC_VECTOR (7 downto 0);
 			  
 			  -- Data Interface
@@ -179,6 +179,7 @@ signal sdi_buf, sdo_buf, sclk_buf, sclk_buf_n, sclk_oddr, cs_buf : std_logic;
 signal clk_div_counter : unsigned(7 downto 0) := (others => '0');
 signal test_rf_counter : unsigned(15 downto 0) := (others => '0');
 signal tcp_rd_en, tcp_rd_en_p, tcp_rd_data_avail : std_logic;
+signal tcp_connection_active : std_logic;
 signal tcp_wr_en, tcp_wr_possible, wr_en : std_logic := '0';
 signal check_rd_data : std_logic;
 signal tcp_data_rd : std_logic_vector(7 downto 0);
@@ -213,7 +214,8 @@ begin
 	
 --------------------------- DEBUG LOGIC ------------------------------
 	
-	LED_OUT(3 downto 2) <= (others => '0');
+	LED_OUT(3 downto 3) <= (others => '0');
+	LED_OUT(2) <= tcp_connection_active;
 	
 	SD_CS_OUT <= sd_cs;
 	SD_CLK_OUT <= sd_clk;
@@ -286,7 +288,7 @@ begin
 					  -- Command interface
 					  INIT_ENC28J60 	=> buttons_edge(3),
 					  DHCP_CONNECT 	=> buttons_edge(4),
-					  TCP_CONNECT 		=> buttons_edge(5),
+--					  TCP_CONNECT 		=> buttons_edge(5),
 					  ERROR_OUT 		=> eth_command_err,
 					  
 					  -- Data Interface
@@ -297,7 +299,7 @@ begin
 					  DEBUG_OUT	=> debug_o,
 					  
 					  -- TCP Connection Interface
-					  TCP_CONNECTION_ACTIVE_OUT 	=> open,
+					  TCP_CONNECTION_ACTIVE_OUT 	=> tcp_connection_active,
 					  TCP_RD_DATA_AVAIL_OUT 		=> tcp_rd_data_avail,
 					  TCP_RD_DATA_EN_IN 				=> tcp_rd_en,
 					  TCP_RD_DATA_OUT 				=> tcp_data_rd,
