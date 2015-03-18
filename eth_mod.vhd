@@ -154,6 +154,7 @@ subtype slv is std_logic_vector;
 
 constant C_250us	: unsigned(15 downto 0) := X"61A8";
 constant C_200ms	: unsigned(24 downto 0) := '1'&X"312D00";
+constant C_100ms	: unsigned(23 downto 0) := X"989680";
 constant C_20ms 	: unsigned(20 downto 0) := '1'&X"E8480";
 
 constant C_init_cmnds_start_addr 	: std_logic_vector(7 downto 0) := X"01";
@@ -253,6 +254,7 @@ signal doing_tx_packet_config, tx_packet_frame_data_rd : std_logic := '0';
 signal packet_instruction, packet_data : std_logic_vector(7 downto 0);
 signal tx_packet_ready_for_transmission : std_logic := '0';
 signal send_prev_packet_waiting, trigger_send_prev_packet : std_logic := '0';
+signal trigger_close_connection, wait_for_tcp_window_size_update : std_logic := '0';
 signal tx_base_addr, tx_base_addr_prev : unsigned(15 downto 0);
 signal tx_base_addr_select : std_logic := '0';
 
@@ -328,7 +330,8 @@ signal large_tx_packet_waiting : std_logic := '0';
 signal tcp_wr_data, tcp_tx_data : std_logic_vector(7 downto 0) := (others => '0');
 signal tx_bytes_to_send, tx_total_packet_length, tx_packet_data_counter : unsigned(11 downto 0) := (others => '0');
 signal tx_total_packet_length_inc_mac, tx_total_packet_length_checksum 	: unsigned(11 downto 0) := (others => '0');
-signal tx_packet_no_ack_timeout : unsigned(24 downto 0) := C_200ms;
+signal tx_packet_no_ack_timeout : unsigned(23 downto 0) := C_100ms;
+signal tx_packet_timeout_counter, tx_packet_timeout_counter_prev : unsigned(7 downto 0) := X"00";
 signal tx_timeout_counter : unsigned(20 downto 0);
 signal tx_packets_no_ack : unsigned(3 downto 0) := X"0";
 
@@ -594,6 +597,7 @@ type PACKET_HANDLER_ST is (	IDLE,
 										TRIGGER_TCP_PSH_ACK0,
 										TRIGGER_TCP_PSH_ACK1,
 										CHECK_TCP_WINDOW_SIZE,
+										RX_TCP_WINDOW_TOO_SMALL,
 										TRIGGER_TCP_PSH_ACK2,
 										TRIGGER_TCP_PSH_ACK3,
 										COMPLETE
@@ -700,7 +704,7 @@ begin
 	INT_PROC: process(CLK_IN)
    begin
       if rising_edge(CLK_IN) then
-			if eth_state = HANDLE_TX_TRANSMIT_PREV0 then
+			if packet_handler_state = RX_TCP_WINDOW_TOO_SMALL then
 				interrupt_counter <= interrupt_counter + 1;
 			end if;
 		end if;
@@ -908,8 +912,9 @@ begin
 					eth_next_state <= TRIGGER_TCP_TX1;
 				end if;
 			when TRIGGER_TCP_TX1 =>
-				if packet_handler_state = CHECK_IF_DATA_TO_SEND then
-				--if packet_handler_state = TRIGGER_TCP_PSH_ACK2 then -- TODO Timeout here (in case of window size?)
+				if packet_handler_state = RX_TCP_WINDOW_TOO_SMALL then
+					eth_next_state <= IDLE;
+				elsif packet_handler_state = TRIGGER_TCP_PSH_ACK2 then
 					eth_next_state <= TRIGGER_TCP_TX2;
 				end if;
 			when TRIGGER_TCP_TX2 =>
@@ -1117,12 +1122,14 @@ begin
 			elsif eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				tcp_connect_waiting <= '0';
 			end if;
-			if eth_state = TRIGGER_TCP_TX0 or tx_packets_no_ack > X"1" then
+			if eth_state = TRIGGER_TCP_TX0 or tx_packets_no_ack > X"1" 
+					or wait_for_tcp_window_size_update = '1' then
 				tcp_data_flush_waiting <= '0';
 			elsif tcp_wr_data_flush = '1' and tcp_connection_active = '1' then
 				tcp_data_flush_waiting <= '1';
 			end if;
-			if unsigned(tcp_wr_data_count) < X"580" or tcp_connection_active = '0' or tx_packets_no_ack > X"1" then
+			if unsigned(tcp_wr_data_count) < X"580" or tcp_connection_active = '0' 
+					or tx_packets_no_ack > X"1" or wait_for_tcp_window_size_update = '1' then
 				large_tx_packet_waiting <= '0';
 			else
 				large_tx_packet_waiting <= '1';
@@ -2024,7 +2031,7 @@ begin
 				end if;
 			when CHECK_TCP_WINDOW_SIZE =>
 				if tx_bytes_to_send > unsigned(rx_tcp_window_size_shifted(11 downto 0)) then -- server is not ready to receive data yet
-					packet_handler_next_state <= COMPLETE;
+					packet_handler_next_state <= RX_TCP_WINDOW_TOO_SMALL;
 				else
 					packet_handler_next_state <= TRIGGER_TCP_PSH_ACK2; 
 				end if;
@@ -2035,6 +2042,8 @@ begin
 			when TRIGGER_TCP_PSH_ACK3 =>
 				packet_handler_next_state <= COMPLETE;
 			
+			when RX_TCP_WINDOW_TOO_SMALL =>
+				packet_handler_next_state <= IDLE;
 			when COMPLETE =>
 				packet_handler_next_state <= IDLE;
 				
@@ -2058,6 +2067,11 @@ begin
 				resend_ack_packet <= '1';
 			elsif eth_state = RESEND_ACK_IN_BUFFER then
 				resend_ack_packet <= '0';
+			end if;
+			if packet_handler_state = RX_TCP_WINDOW_TOO_SMALL then
+				wait_for_tcp_window_size_update <= '1';
+			elsif packet_handler_state = PARSE_TCP_PACKET25 then
+				wait_for_tcp_window_size_update <= '0';
 			end if;
 		end if;
 	end process;
@@ -2729,12 +2743,29 @@ begin
 			if tx_packets_no_ack > X"1" then
 				tx_packet_no_ack_timeout <= tx_packet_no_ack_timeout - 1;
 			else
-				tx_packet_no_ack_timeout <= C_200ms;
+				tx_packet_no_ack_timeout <= C_100ms;
 			end if;
-			if tx_packet_no_ack_timeout = '0'&X"000000" then
+			if tx_packets_no_ack < X"2" then
+				tx_packet_timeout_counter <= X"00";
+			elsif tx_packet_no_ack_timeout = X"000000" then
+				tx_packet_timeout_counter <= tx_packet_timeout_counter + 1;
+			end if;
+			tx_packet_timeout_counter_prev <= tx_packet_timeout_counter;
+			if tx_packet_timeout_counter = X"01" and tx_packet_timeout_counter_prev = X"00" then
+				trigger_send_prev_packet <= '1';
+			elsif tx_packet_timeout_counter = X"03" and tx_packet_timeout_counter_prev = X"02" then
+				trigger_send_prev_packet <= '1';
+			elsif tx_packet_timeout_counter = X"07" and tx_packet_timeout_counter_prev = X"06" then
+				trigger_send_prev_packet <= '1';
+			elsif tx_packet_timeout_counter = X"0F" and tx_packet_timeout_counter_prev = X"0E" then
 				trigger_send_prev_packet <= '1';
 			else
 				trigger_send_prev_packet <= '0';
+			end if;
+			if tx_packet_timeout_counter = X"1F" and tx_packet_timeout_counter_prev = X"1E" then
+				trigger_close_connection <= '1';
+			else
+				trigger_close_connection <= '0';
 			end if;
 		end if;
 	end process;
@@ -3019,7 +3050,7 @@ begin
 	TCP_WR_DATA_POSSIBLE_OUT <= tcp_wr_data_possible;
 	tcp_wr_data_possible <= '1' when tcp_wr_data_count < X"FA0" else '0';
 	
-	tcp_wr_data_en <= TCP_WR_DATA_EN_IN when tcp_wr_data_possible = '1' else '0';
+	tcp_wr_data_en <= TCP_WR_DATA_EN_IN;
 	tcp_wr_data <= TCP_WR_DATA_IN;
 	tcp_wr_data_flush <= TCP_WR_DATA_FLUSH_IN;
 	tcp_tx_data_rd <= '1' when (tx_packet_state = LOAD_TX_PACKET_DATA) or (tx_packet_state = INIT_LOAD_TX_PACKET_DATA) else '0'; -- TODO or previous state = LOAD_TX_PACKET_DATA
