@@ -37,22 +37,23 @@ entity eth_mod is
 			  ERROR_OUT 		: out  STD_LOGIC_VECTOR (7 downto 0);
 			  
 			  -- Data Interface
-			  ADDR_IN	: in  STD_LOGIC_VECTOR (7 downto 0);
-			  DATA_OUT	: out  STD_LOGIC_VECTOR (7 downto 0);
+--			  ADDR_IN	: in  STD_LOGIC_VECTOR (7 downto 0);
+--			  DATA_OUT	: out  STD_LOGIC_VECTOR (7 downto 0);
 			  
 			  -- Debug Interface
 			  DEBUG_IN				: in 	STD_LOGIC_VECTOR(2 downto 0);
 			  DEBUG_OUT				: out  STD_LOGIC_VECTOR (15 downto 0);
 			  
            -- TCP Connection Interface
-			  TCP_RD_DATA_AVAIL_OUT 	: out STD_LOGIC;
-			  TCP_RD_DATA_EN_IN 			: in STD_LOGIC;
-			  TCP_RD_DATA_OUT 			: out STD_LOGIC_VECTOR (7 downto 0);
-			  TCP_WR_DATA_POSSIBLE_OUT	: out STD_LOGIC;
-			  TCP_WR_DATA_EN_IN 			: in STD_LOGIC;
-			  TCP_WR_DATA_FLUSH_IN		: in STD_LOGIC;
-			  TCP_WR_DATA_IN 				: in STD_LOGIC_VECTOR (7 downto 0);
-           
+			  TCP_CONNECTION_ACTIVE_OUT 	: out STD_LOGIC;
+			  TCP_RD_DATA_AVAIL_OUT 		: out STD_LOGIC;
+			  TCP_RD_DATA_EN_IN 				: in STD_LOGIC;
+			  TCP_RD_DATA_OUT 				: out STD_LOGIC_VECTOR (7 downto 0);
+			  TCP_WR_DATA_POSSIBLE_OUT		: out STD_LOGIC;
+			  TCP_WR_DATA_EN_IN 				: in STD_LOGIC;
+			  TCP_WR_DATA_FLUSH_IN			: in STD_LOGIC;
+			  TCP_WR_DATA_IN 					: in STD_LOGIC_VECTOR (7 downto 0);
+			  
 			  CLK_1HZ_IN	: in STD_LOGIC;
 			  
 			  -- Eth SPI interface
@@ -186,6 +187,7 @@ constant C_DHCP_Dest_Port			: std_logic_vector(15 downto 0) := X"0044";
 constant C_dhcp_magic_cookie		: std_logic_vector(31 downto 0) := X"63825363";
 constant C_tcp_syn_flags			: std_logic_vector(7 downto 0) := X"02";
 constant C_tcp_ack_flags			: std_logic_vector(7 downto 0) := X"10";
+constant C_tcp_fin_ack_flags		: std_logic_vector(7 downto 0) := X"11";
 constant C_tcp_psh_ack_flags		: std_logic_vector(7 downto 0) := X"18";
 
 constant C_ICMP_Ping_Length 		: std_logic_vector(15 downto 0) := X"0054";
@@ -316,7 +318,7 @@ signal rx_tcp_window_shift : std_logic_vector(3 downto 0);
 signal tcp_option_addr, next_protocol_start_addr : unsigned(10 downto 0);
 signal rx_data_length, prev_rx_data_length : unsigned(15 downto 0);
 signal rx_data_start_addr : unsigned(10 downto 0);
-signal resend_ack_packet : std_logic := '0';
+signal resend_ack_packet, fin_received : std_logic := '0';
 
 signal tcp_rx_data_we, tcp_rd_data_available, tcp_data_rd_en : std_logic := '0';
 signal tcp_rx_ram_almost_full : std_logic := '0';
@@ -1947,9 +1949,9 @@ begin
 					packet_handler_next_state <= PARSE_TCP_PACKET27;
 				end if;
 			when PARSE_TCP_PACKET25 =>
-				if rx_tcp_flags(4 downto 0) = "1"&X"2" and expecting_syn_ack = '1' then
+				if rx_tcp_flags(4 downto 1) = X"9" and expecting_syn_ack = '1' then
 					packet_handler_next_state <= CHECK_TCP_SYN_ACK_PACKET0;
-				elsif rx_tcp_flags(4 downto 0) = "1"&X"8" or rx_tcp_flags(4 downto 0) = "1"&X"0" then -- TODO look at data sent?
+				elsif rx_tcp_flags(4 downto 1) = X"C" or rx_tcp_flags(4 downto 1) = X"8" then
 					packet_handler_next_state <= CHECK_TCP_PSH_ACK_PACKET0;
 				else
 					packet_handler_next_state <= COMPLETE;
@@ -2434,7 +2436,7 @@ begin
 				elsif cancel_dhcp_connect = '1' then
 					tx_packet_next_state <= CANCEL_DHCP_CONNECT_ST;
 				elsif close_tcp_connection = '1' then
-					tx_packet_next_state <= TCP_CONNECTION_CLOSED; -- TODO send FIN packet!
+					tx_packet_next_state <= TCP_CONNECTION_CLOSED;
 				elsif cancel_tcp_connection = '1' then
 					tx_packet_next_state <= CANCEL_TCP_CONNECTION_ST;
 				elsif send_tcp_tx_packet = '1' then
@@ -2696,7 +2698,11 @@ begin
 			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
 				tcp_flags <= C_tcp_syn_flags;
 			elsif packet_handler_state = TRIGGER_TCP_ACK0 then
-				tcp_flags <= C_tcp_ack_flags;
+				if fin_received = '1' then
+					tcp_flags <= C_tcp_fin_ack_flags;
+				else
+					tcp_flags <= C_tcp_ack_flags;
+				end if;
 			elsif packet_handler_state = TRIGGER_TCP_PSH_ACK2 then
 				tcp_flags <= C_tcp_psh_ack_flags;
 			end if;
@@ -2712,9 +2718,16 @@ begin
 			elsif tx_packet_state = CANCEL_TCP_CONNECTION_ST then
 				expecting_syn_ack <= '0';
 			end if;
+			if eth_state = TRIGGER_NEW_TCP_CONNECTION then
+				fin_received <= '0';
+			elsif rx_tcp_flags(0) = '1' then
+				fin_received <= '1';
+			end if;
 			if packet_handler_state = CHECK_TCP_SYN_ACK_PACKET2 then
 				tcp_connection_active <= '1';
-			elsif tx_packet_state = TCP_CONNECTION_CLOSED then
+			elsif fin_received = '1' then
+				tcp_connection_active <= '0';
+			elsif trigger_close_connection = '1' then
 				tcp_connection_active <= '0';
 			end if;
 			if packet_handler_state = TRIGGER_TCP_PSH_ACK0 then
@@ -3027,6 +3040,8 @@ begin
 
 --------------------- TCP RX DATA ----------------------------
 
+	TCP_CONNECTION_ACTIVE_OUT <= tcp_connection_active;
+
 	tcp_data_rd_en <= TCP_RD_DATA_EN_IN;
 	TCP_RD_DATA_AVAIL_OUT <= not(tcp_rd_data_available);
 	TCP_RD_DATA_OUT <= tcp_rx_data_rd_data;
@@ -3086,48 +3101,48 @@ begin
 
 	--- DATA I/O ---
 	
-	process(CLK_IN)
-	begin
-		if rising_edge(CLK_IN) then
-			if ADDR_IN = X"00" then
-				DATA_OUT <= "0000000" & network_interface_enabled;
-			elsif ADDR_IN = X"01" then
-				DATA_OUT <= mac_addr(47 downto 40);
-			elsif ADDR_IN = X"02" then
-				DATA_OUT <= mac_addr(39 downto 32);
-			elsif ADDR_IN = X"03" then
-				DATA_OUT <= mac_addr(31 downto 24);
-			elsif ADDR_IN = X"04" then
-				DATA_OUT <= mac_addr(23 downto 16);
-			elsif ADDR_IN = X"05" then
-				DATA_OUT <= mac_addr(15 downto 8);
-			elsif ADDR_IN = X"06" then
-				DATA_OUT <= mac_addr(7 downto 0);
-			elsif ADDR_IN = X"07" then
-				DATA_OUT <= "0000000" & dhcp_enable;
-			elsif ADDR_IN = X"08" then
-				DATA_OUT <= "000000" & static_addr_locked & dhcp_addr_locked;
-			elsif ADDR_IN = X"09" then
-				DATA_OUT <= ip_addr(31 downto 24);
-			elsif ADDR_IN = X"0A" then
-				DATA_OUT <= ip_addr(23 downto 16);
-			elsif ADDR_IN = X"0B" then
-				DATA_OUT <= ip_addr(15 downto 8);
-			elsif ADDR_IN = X"0C" then
-				DATA_OUT <= ip_addr(7 downto 0);
-			elsif ADDR_IN = X"0D" then
-				DATA_OUT <= cloud_ip_addr(31 downto 24);
-			elsif ADDR_IN = X"0E" then
-				DATA_OUT <= cloud_ip_addr(23 downto 16);
-			elsif ADDR_IN = X"0F" then
-				DATA_OUT <= cloud_ip_addr(15 downto 8);
-			elsif ADDR_IN = X"10" then
-				DATA_OUT <= cloud_ip_addr(7 downto 0);
-			elsif ADDR_IN = X"11" then
-				DATA_OUT <= "0000000" & tcp_connection_active;
-			end if;
-		end if;
-	end process;
+--	process(CLK_IN)
+--	begin
+--		if rising_edge(CLK_IN) then
+--			if ADDR_IN = X"00" then
+--				DATA_OUT <= "0000000" & network_interface_enabled;
+--			elsif ADDR_IN = X"01" then
+--				DATA_OUT <= mac_addr(47 downto 40);
+--			elsif ADDR_IN = X"02" then
+--				DATA_OUT <= mac_addr(39 downto 32);
+--			elsif ADDR_IN = X"03" then
+--				DATA_OUT <= mac_addr(31 downto 24);
+--			elsif ADDR_IN = X"04" then
+--				DATA_OUT <= mac_addr(23 downto 16);
+--			elsif ADDR_IN = X"05" then
+--				DATA_OUT <= mac_addr(15 downto 8);
+--			elsif ADDR_IN = X"06" then
+--				DATA_OUT <= mac_addr(7 downto 0);
+--			elsif ADDR_IN = X"07" then
+--				DATA_OUT <= "0000000" & dhcp_enable;
+--			elsif ADDR_IN = X"08" then
+--				DATA_OUT <= "000000" & static_addr_locked & dhcp_addr_locked;
+--			elsif ADDR_IN = X"09" then
+--				DATA_OUT <= ip_addr(31 downto 24);
+--			elsif ADDR_IN = X"0A" then
+--				DATA_OUT <= ip_addr(23 downto 16);
+--			elsif ADDR_IN = X"0B" then
+--				DATA_OUT <= ip_addr(15 downto 8);
+--			elsif ADDR_IN = X"0C" then
+--				DATA_OUT <= ip_addr(7 downto 0);
+--			elsif ADDR_IN = X"0D" then
+--				DATA_OUT <= cloud_ip_addr(31 downto 24);
+--			elsif ADDR_IN = X"0E" then
+--				DATA_OUT <= cloud_ip_addr(23 downto 16);
+--			elsif ADDR_IN = X"0F" then
+--				DATA_OUT <= cloud_ip_addr(15 downto 8);
+--			elsif ADDR_IN = X"10" then
+--				DATA_OUT <= cloud_ip_addr(7 downto 0);
+--			elsif ADDR_IN = X"11" then
+--				DATA_OUT <= "0000000" & tcp_connection_active;
+--			end if;
+--		end if;
+--	end process;
 
 end Behavioral;
 

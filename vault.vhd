@@ -85,20 +85,21 @@ architecture Behavioral of vault is
 			  ERROR_OUT 		: out  STD_LOGIC_VECTOR (7 downto 0);
 			  
 			  -- Data Interface
-			  ADDR_IN	: in  STD_LOGIC_VECTOR (7 downto 0);
-			  DATA_OUT	: out  STD_LOGIC_VECTOR (7 downto 0);
+--			  ADDR_IN	: in  STD_LOGIC_VECTOR (7 downto 0);
+--			  DATA_OUT	: out  STD_LOGIC_VECTOR (7 downto 0);
 			  
 			  DEBUG_IN 	: in STD_LOGIC_VECTOR (2 downto 0);
 			  DEBUG_OUT	: out  STD_LOGIC_VECTOR (15 downto 0);
 			  
            -- TCP Connection Interface
-			  TCP_RD_DATA_AVAIL_OUT 	: out STD_LOGIC;
-			  TCP_RD_DATA_EN_IN 			: in STD_LOGIC;
-			  TCP_RD_DATA_OUT 			: out STD_LOGIC_VECTOR (7 downto 0);
-			  TCP_WR_DATA_POSSIBLE_OUT	: out STD_LOGIC;
-			  TCP_WR_DATA_EN_IN 			: in STD_LOGIC;
-			  TCP_WR_DATA_FLUSH_IN		: in STD_LOGIC;
-			  TCP_WR_DATA_IN 				: in STD_LOGIC_VECTOR (7 downto 0);
+			  TCP_CONNECTION_ACTIVE_OUT 	: out STD_LOGIC;
+			  TCP_RD_DATA_AVAIL_OUT 		: out STD_LOGIC;
+			  TCP_RD_DATA_EN_IN 				: in STD_LOGIC;
+			  TCP_RD_DATA_OUT 				: out STD_LOGIC_VECTOR (7 downto 0);
+			  TCP_WR_DATA_POSSIBLE_OUT		: out STD_LOGIC;
+			  TCP_WR_DATA_EN_IN 				: in STD_LOGIC;
+			  TCP_WR_DATA_FLUSH_IN			: in STD_LOGIC;
+			  TCP_WR_DATA_IN 					: in STD_LOGIC_VECTOR (7 downto 0);
 			  
 			  CLK_1HZ_IN	: in STD_LOGIC;
 			  
@@ -289,20 +290,21 @@ begin
 					  ERROR_OUT 		=> eth_command_err,
 					  
 					  -- Data Interface
-					  ADDR_IN 	=> addr_bus,
-					  DATA_OUT 	=> data_bus,
+--					  ADDR_IN 	=> addr_bus,
+--					  DATA_OUT 	=> data_bus,
 					  
 					  DEBUG_IN	=> debug_i,
 					  DEBUG_OUT	=> debug_o,
 					  
 					  -- TCP Connection Interface
-					  TCP_RD_DATA_AVAIL_OUT 	=> tcp_rd_data_avail,
-					  TCP_RD_DATA_EN_IN 			=> tcp_rd_en,
-					  TCP_RD_DATA_OUT 			=> tcp_data_rd,
-					  TCP_WR_DATA_POSSIBLE_OUT	=> tcp_wr_possible,
-					  TCP_WR_DATA_EN_IN 			=> tcp_wr_en,
-					  TCP_WR_DATA_FLUSH_IN		=> buttons_edge(1),
-					  TCP_WR_DATA_IN 				=> slv(tcp_data_wr),
+					  TCP_CONNECTION_ACTIVE_OUT 	=> open,
+					  TCP_RD_DATA_AVAIL_OUT 		=> tcp_rd_data_avail,
+					  TCP_RD_DATA_EN_IN 				=> tcp_rd_en,
+					  TCP_RD_DATA_OUT 				=> tcp_data_rd,
+					  TCP_WR_DATA_POSSIBLE_OUT		=> tcp_wr_possible,
+					  TCP_WR_DATA_EN_IN 				=> tcp_wr_en,
+					  TCP_WR_DATA_FLUSH_IN			=> buttons_edge(1),
+					  TCP_WR_DATA_IN 					=> slv(tcp_data_wr),
 					  
 					  CLK_1HZ_IN	=> clk_1hz,
 					  
@@ -356,6 +358,7 @@ begin
 					clk_div_counter <= clk_div_counter - 1;
 				end if;
 				if clk_div_counter = X"00" and tcp_wr_possible = '1' and buttons(0) = '0' then
+--				if clk_div_counter = X"00" and tcp_rd_data_avail = '1' and buttons(0) = '0' then
 --					tcp_rd_en <= '1';
 					tcp_wr_en <= '1';
 				else
