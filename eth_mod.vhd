@@ -14,9 +14,13 @@
 --
 -- Revision: 
 -- Revision 0.01 - File Created
--- Additional Comments: TODO - TCP CLOSE CONNECTION!
+-- Additional Comments:
+--
+-- TODO: Have 'G_ENABLE_DHCP' Generic and comment all statements that rely on dhcp with '#ifdef end'
+-- TODO: Get correct version of 'sf.conf' and add it to repository
 --
 ----------------------------------------------------------------------------------
+
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
@@ -234,15 +238,15 @@ signal tx_packet_rd_data, tx_packet_ram_data : std_logic_vector(7 downto 0);
 signal tx_packet_rd_data2 : std_logic_vector(7 downto 0);
 signal handle_tx_packet : std_logic := '0';
 
-signal ip_addr  		: std_logic_vector(31 downto 0) := X"C0A80166"; 		-- 192.168.1.102
-signal mac_addr 		: std_logic_vector(47 downto 0) := X"8066F23D547A";
-signal ip_identification : std_logic_vector(15 downto 0);
-signal ping_enable 	: std_logic := '1';
-signal dhcp_enable 	: std_logic := '0';
+signal ip_addr  			: std_logic_vector(31 downto 0) := X"C0A80166"; 		-- 192.168.1.102
+signal mac_addr 			: std_logic_vector(47 downto 0) := X"8066F23D547A";
+signal ip_identification 	: std_logic_vector(15 downto 0);
+signal ping_enable 			: std_logic := '1';
+signal dhcp_enable 			: std_logic := '0';
 signal dhcp_addr_locked, static_addr_locked 	: std_logic := '0';
 
-signal server_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100";	-- 192.168.1.0 (should be router_ip_address ?)
-signal server_mac_addr : std_logic_vector(47 downto 0) := X"000000000000";
+signal client_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100";	-- 192.168.1.0 should be set dynamically upon TCP connection ??
+signal client_mac_addr : std_logic_vector(47 downto 0) := X"000000000000";
 
 --signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"76D2707C"; -- 118.210.112.124
 signal cloud_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100"; -- 192.168.1.0
@@ -317,6 +321,7 @@ signal tcp_option_addr, next_protocol_start_addr : unsigned(10 downto 0);
 signal rx_data_length, prev_rx_data_length : unsigned(15 downto 0);
 signal rx_data_start_addr : unsigned(10 downto 0);
 signal resend_ack_packet, fin_received, syn_ack_packet : std_logic := '0';
+signal sent_syn_ack : std_logic := '0';
 signal fin_received_p, trigger_fin_ack : std_logic := '0';
 
 signal tcp_rx_data_we, tcp_rd_data_available, tcp_data_rd_en : std_logic := '0';
@@ -2249,17 +2254,17 @@ begin
 				dhcp_message_type <= rx_packet_rd_data;
 			end if;
 			if (packet_handler_state = CHECK_TCP_SYN_PACKET0) then
-				server_mac_addr(47 downto 40) <= rx_packet_source_mac(47 downto 40);
+				client_mac_addr(47 downto 40) <= rx_packet_source_mac(47 downto 40);
 			elsif (packet_handler_state = CHECK_TCP_SYN_PACKET1) then
-				server_mac_addr(39 downto 32) <= rx_packet_source_mac(39 downto 32);
+				client_mac_addr(39 downto 32) <= rx_packet_source_mac(39 downto 32);
 			elsif (packet_handler_state = CHECK_TCP_SYN_PACKET2) then
-				server_mac_addr(31 downto 24) <= rx_packet_source_mac(31 downto 24);
+				client_mac_addr(31 downto 24) <= rx_packet_source_mac(31 downto 24);
 			elsif (packet_handler_state = CHECK_TCP_SYN_PACKET3) then
-				server_mac_addr(23 downto 16) <= rx_packet_source_mac(23 downto 16);
+				client_mac_addr(23 downto 16) <= rx_packet_source_mac(23 downto 16);
 			elsif (packet_handler_state = CHECK_TCP_SYN_PACKET4) then
-				server_mac_addr(15 downto 8) <= rx_packet_source_mac(15 downto 8);
+				client_mac_addr(15 downto 8) <= rx_packet_source_mac(15 downto 8);
 			elsif (packet_handler_state = CHECK_TCP_SYN_PACKET5) then
-				server_mac_addr(7 downto 0) <= rx_packet_source_mac(7 downto 0);
+				client_mac_addr(7 downto 0) <= rx_packet_source_mac(7 downto 0);
 			end if;
 			if packet_handler_state = PARSE_TCP_PACKET2 then
 				rx_tcp_source_port(15 downto 8) <= rx_packet_rd_data; 
@@ -2360,7 +2365,7 @@ begin
       if rising_edge(CLK_IN) then
 			if packet_handler_state = HANDLE_DHCP_ACK1 then
 				ip_addr <= dhcp_your_ip_addr;
-				server_ip_addr <= dhcp_server_ip_addr;
+				client_ip_addr <= dhcp_server_ip_addr;
 			end if;
 			if tx_packet_state = INIT_DHCP_DISCOVER_METADATA then
 				expecting_dhcp_offer <= '1';
@@ -2620,16 +2625,16 @@ begin
 							dhcp_your_ip_addr(15 downto 8)				when "011"&X"4",
 							dhcp_your_ip_addr(23 downto 16)				when "011"&X"5",
 							dhcp_your_ip_addr(31 downto 24)				when "011"&X"6",
-							server_ip_addr(7 downto 0)						when "011"&X"7",
-							server_ip_addr(15 downto 8)					when "011"&X"8",
-							server_ip_addr(23 downto 16)					when "011"&X"9",
-							server_ip_addr(31 downto 24)					when "011"&X"A",
-							server_mac_addr(7 downto 0) 					when "011"&X"B",
-							server_mac_addr(15 downto 8) 					when "011"&X"C",
-							server_mac_addr(23 downto 16) 				when "011"&X"D",
-							server_mac_addr(31 downto 24) 				when "011"&X"E",
-							server_mac_addr(39 downto 32) 				when "011"&X"F",
-							server_mac_addr(47 downto 40) 				when "100"&X"0",
+							client_ip_addr(7 downto 0)						when "011"&X"7",
+							client_ip_addr(15 downto 8)					when "011"&X"8",
+							client_ip_addr(23 downto 16)					when "011"&X"9",
+							client_ip_addr(31 downto 24)					when "011"&X"A",
+							client_mac_addr(7 downto 0) 					when "011"&X"B",
+							client_mac_addr(15 downto 8) 					when "011"&X"C",
+							client_mac_addr(23 downto 16) 				when "011"&X"D",
+							client_mac_addr(31 downto 24) 				when "011"&X"E",
+							client_mac_addr(39 downto 32) 				when "011"&X"F",
+							client_mac_addr(47 downto 40) 				when "100"&X"0",
 							listen_port(7 downto 0)							when "100"&X"1",
 							listen_port(15 downto 8)						when "100"&X"2",
 							client_port(7 downto 0)							when "100"&X"3",
@@ -2676,11 +2681,15 @@ begin
 			end if;
 			if packet_handler_state = CHECK_TCP_SYN_PACKET0 then
 				tcp_sequence_number <= unsigned(lfsr_val);
+			elsif packet_handler_state = PARSE_TCP_PACKET0 and sent_syn_ack = '1' then
+				tcp_sequence_number <= tcp_sequence_number + 1;
 			elsif packet_handler_state = TRIGGER_TCP_PSH_ACK3 then
 				tcp_sequence_number <= tcp_sequence_number + RESIZE(tx_bytes_to_send, 32);
 			end if;
 			if packet_handler_state = CHECK_TCP_SYN_PACKET0 then
 				tcp_acknowledge_number <= unsigned(rx_tcp_seq_number) + 1;
+			elsif packet_handler_state = TRIGGER_TCP_ACK0 and fin_received = '1' then
+				tcp_acknowledge_number <= tcp_acknowledge_number + 1;
 			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET3 then
 				tcp_acknowledge_number <= tcp_acknowledge_number + RESIZE(rx_data_length, 32);
 			end if;
@@ -2716,7 +2725,12 @@ begin
 			elsif packet_handler_state = TRIGGER_TCP_ACK0 then
 				syn_ack_packet <= '0';
 			end if;
-			if packet_handler_state = CHECK_TCP_SYN_PACKET0 then -- TODO only after 3rd handshake?
+			if packet_handler_state = TRIGGER_TCP_ACK0 and syn_ack_packet = '1' then
+				sent_syn_ack <= '1';
+			elsif packet_handler_state = CHECK_TCP_PSH_ACK_PACKET0 then
+				sent_syn_ack <= '0';
+			end if;
+			if packet_handler_state = CHECK_TCP_SYN_PACKET0 then
 				tcp_connection_active <= '1';
 			elsif fin_received = '1' then
 				tcp_connection_active <= '0';
