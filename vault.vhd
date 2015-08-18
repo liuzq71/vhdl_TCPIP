@@ -75,8 +75,8 @@ architecture Behavioral of vault is
 	END COMPONENT;
 
 	COMPONENT eth_mod is
+	 Generic ( G_FUNCTION 	: string :="client" ); -- client/server (defaults to client)
     Port ( CLK_IN 	: in  STD_LOGIC;
-           RESET_IN 	: in  STD_LOGIC;
 			  
 			  -- Command interface
 			  INIT_ENC28J60 	: in 	STD_LOGIC;
@@ -282,8 +282,8 @@ begin
    );
 
 	eth_mod_inst : eth_mod
+		 Generic Map ( G_FUNCTION 	=> "client" )
 		 Port Map ( CLK_IN 	=> clk_100MHz,
-						RESET_IN => '0',
 				  
 					  -- Command interface
 					  INIT_ENC28J60 	=> buttons_edge(3),

@@ -27,39 +27,35 @@ use IEEE.NUMERIC_STD.ALL;
 --use UNISIM.VComponents.all;
 
 entity eth_mod is
-    Port ( CLK_IN 	: in  STD_LOGIC;
-           RESET_IN 	: in  STD_LOGIC;
-			  
-			  -- Command interface
-			  INIT_ENC28J60 	: in 	STD_LOGIC;
-			  DHCP_CONNECT 	: in 	STD_LOGIC;
-			  ERROR_OUT 		: out  STD_LOGIC_VECTOR (7 downto 0);
-			  
-			  -- Data Interface
---			  ADDR_IN	: in  STD_LOGIC_VECTOR (7 downto 0);
---			  DATA_OUT	: out  STD_LOGIC_VECTOR (7 downto 0);
-			  
-			  -- Debug Interface
-			  DEBUG_IN				: in 	STD_LOGIC_VECTOR(2 downto 0);
-			  DEBUG_OUT				: out  STD_LOGIC_VECTOR (15 downto 0);
-			  
-           -- TCP Connection Interface
-			  TCP_CONNECTION_ACTIVE_OUT 	: out STD_LOGIC;
-			  TCP_RD_DATA_AVAIL_OUT 		: out STD_LOGIC;
-			  TCP_RD_DATA_EN_IN 				: in STD_LOGIC;
-			  TCP_RD_DATA_OUT 				: out STD_LOGIC_VECTOR (7 downto 0);
-			  TCP_WR_DATA_POSSIBLE_OUT		: out STD_LOGIC;
-			  TCP_WR_DATA_EN_IN 				: in STD_LOGIC;
-			  TCP_WR_DATA_FLUSH_IN			: in STD_LOGIC;
-			  TCP_WR_DATA_IN 					: in STD_LOGIC_VECTOR (7 downto 0);
-			  
-			  CLK_1HZ_IN	: in STD_LOGIC;
-			  
-			  -- Eth SPI interface
-			  SDI_OUT 	: out  STD_LOGIC;
-           SDO_IN 	: in  STD_LOGIC;
-           SCLK_OUT 	: out  STD_LOGIC;
-           CS_OUT 	: out  STD_LOGIC);
+	Generic ( G_FUNCTION 	:string :="client" );
+    Port ( 
+			CLK_IN 		: in STD_LOGIC;
+			CLK_1HZ_IN	: in STD_LOGIC;
+
+			-- Command interface
+			INIT_ENC28J60 	: in 	STD_LOGIC;
+			DHCP_CONNECT 	: in 	STD_LOGIC;
+			ERROR_OUT 		: out  STD_LOGIC_VECTOR (7 downto 0);
+
+			-- Debug Interface
+			DEBUG_IN		: in 	STD_LOGIC_VECTOR(2 downto 0);
+			DEBUG_OUT		: out  STD_LOGIC_VECTOR (15 downto 0);
+
+			-- TCP Connection Interface
+			TCP_CONNECTION_ACTIVE_OUT 	: out STD_LOGIC;
+			TCP_RD_DATA_AVAIL_OUT 		: out STD_LOGIC;
+			TCP_RD_DATA_EN_IN 			: in STD_LOGIC;
+			TCP_RD_DATA_OUT 			: out STD_LOGIC_VECTOR (7 downto 0);
+			TCP_WR_DATA_POSSIBLE_OUT	: out STD_LOGIC;
+			TCP_WR_DATA_EN_IN 			: in STD_LOGIC;
+			TCP_WR_DATA_FLUSH_IN		: in STD_LOGIC;
+			TCP_WR_DATA_IN 				: in STD_LOGIC_VECTOR (7 downto 0);		
+
+			-- Eth SPI interface
+			SDI_OUT 	: out  STD_LOGIC;
+			SDO_IN 		: in  STD_LOGIC;
+			SCLK_OUT 	: out  STD_LOGIC;
+			CS_OUT 		: out  STD_LOGIC );
 end eth_mod;
 
 architecture Behavioral of eth_mod is
@@ -184,7 +180,10 @@ constant C_IPV4_Protocol_Number	: std_logic_vector(3 downto 0) := X"4";
 constant C_DHCP_Source_Port		: std_logic_vector(15 downto 0) := X"0043";
 constant C_DHCP_Dest_Port			: std_logic_vector(15 downto 0) := X"0044";
 constant C_dhcp_magic_cookie		: std_logic_vector(31 downto 0) := X"63825363";
-constant C_tcp_syn_ack_flags		: std_logic_vector(7 downto 0) := X"12";
+
+constant C_tcp_syn_ack_flags	: std_logic_vector(7 downto 0) := X"12";
+constant C_tcp_syn_flags			: std_logic_vector(7 downto 0) := X"02";
+
 constant C_tcp_ack_flags			: std_logic_vector(7 downto 0) := X"10";
 constant C_tcp_fin_ack_flags		: std_logic_vector(7 downto 0) := X"11";
 constant C_tcp_psh_ack_flags		: std_logic_vector(7 downto 0) := X"18";
@@ -239,7 +238,7 @@ signal ip_addr  		: std_logic_vector(31 downto 0) := X"C0A80166"; 		-- 192.168.1
 signal mac_addr 		: std_logic_vector(47 downto 0) := X"8066F23D547A";
 signal ip_identification : std_logic_vector(15 downto 0);
 signal ping_enable 	: std_logic := '1';
-signal dhcp_enable 	: std_logic := '1';
+signal dhcp_enable 	: std_logic := '0';
 signal dhcp_addr_locked, static_addr_locked 	: std_logic := '0';
 
 signal server_ip_addr : std_logic_vector(31 downto 0) := X"C0A80100";	-- 192.168.1.0 (should be router_ip_address ?)
@@ -582,6 +581,11 @@ type PACKET_HANDLER_ST is (	IDLE,
 										PARSE_TCP_PACKET26,
 										PARSE_TCP_PACKET27,
 										CHECK_TCP_SYN_PACKET0,
+										CHECK_TCP_SYN_PACKET1,
+										CHECK_TCP_SYN_PACKET2,
+										CHECK_TCP_SYN_PACKET3,
+										CHECK_TCP_SYN_PACKET4,
+										CHECK_TCP_SYN_PACKET5,
 										CHECK_TCP_PSH_ACK_PACKET0,
 										CHECK_TCP_PSH_ACK_PACKET1,
 										CHECK_TCP_PSH_ACK_PACKET2,
@@ -1952,6 +1956,16 @@ begin
 					packet_handler_next_state <= PARSE_TCP_PACKET20;
 				end if;
 			when CHECK_TCP_SYN_PACKET0 =>
+				packet_handler_next_state <= CHECK_TCP_SYN_PACKET1;
+			when CHECK_TCP_SYN_PACKET1 =>
+				packet_handler_next_state <= CHECK_TCP_SYN_PACKET2;
+			when CHECK_TCP_SYN_PACKET2 =>
+				packet_handler_next_state <= CHECK_TCP_SYN_PACKET3;
+			when CHECK_TCP_SYN_PACKET3 =>
+				packet_handler_next_state <= CHECK_TCP_SYN_PACKET4;
+			when CHECK_TCP_SYN_PACKET4 =>
+				packet_handler_next_state <= CHECK_TCP_SYN_PACKET5;
+			when CHECK_TCP_SYN_PACKET5 =>
 				packet_handler_next_state <= TRIGGER_TCP_ACK0;
 				
 			when CHECK_TCP_PSH_ACK_PACKET0 =>
@@ -2234,18 +2248,18 @@ begin
 			if packet_handler_state = PARSE_DHCP_PACKET23 then
 				dhcp_message_type <= rx_packet_rd_data;
 			end if;
-			if (packet_handler_state = HANDLE_ARP_REPLY2) or (packet_handler_state = HANDLE_DHCP_ACK3) then
-				server_mac_addr(47 downto 40) <= rx_packet_rd_data;
-			elsif (packet_handler_state = HANDLE_ARP_REPLY3) or (packet_handler_state = HANDLE_DHCP_ACK4) then
-				server_mac_addr(39 downto 32) <= rx_packet_rd_data;
-			elsif (packet_handler_state = HANDLE_ARP_REPLY4) or (packet_handler_state = HANDLE_DHCP_ACK5) then
-				server_mac_addr(31 downto 24) <= rx_packet_rd_data;
-			elsif (packet_handler_state = HANDLE_ARP_REPLY5) or (packet_handler_state = HANDLE_DHCP_ACK6) then
-				server_mac_addr(23 downto 16) <= rx_packet_rd_data;
-			elsif (packet_handler_state = HANDLE_ARP_REPLY6) or (packet_handler_state = HANDLE_DHCP_ACK7) then
-				server_mac_addr(15 downto 8) <= rx_packet_rd_data;
-			elsif (packet_handler_state = HANDLE_ARP_REPLY7) or (packet_handler_state = HANDLE_DHCP_ACK8) then
-				server_mac_addr(7 downto 0) <= rx_packet_rd_data;
+			if (packet_handler_state = CHECK_TCP_SYN_PACKET0) then
+				server_mac_addr(47 downto 40) <= rx_packet_source_mac(47 downto 40);
+			elsif (packet_handler_state = CHECK_TCP_SYN_PACKET1) then
+				server_mac_addr(39 downto 32) <= rx_packet_source_mac(39 downto 32);
+			elsif (packet_handler_state = CHECK_TCP_SYN_PACKET2) then
+				server_mac_addr(31 downto 24) <= rx_packet_source_mac(31 downto 24);
+			elsif (packet_handler_state = CHECK_TCP_SYN_PACKET3) then
+				server_mac_addr(23 downto 16) <= rx_packet_source_mac(23 downto 16);
+			elsif (packet_handler_state = CHECK_TCP_SYN_PACKET4) then
+				server_mac_addr(15 downto 8) <= rx_packet_source_mac(15 downto 8);
+			elsif (packet_handler_state = CHECK_TCP_SYN_PACKET5) then
+				server_mac_addr(7 downto 0) <= rx_packet_source_mac(7 downto 0);
 			end if;
 			if packet_handler_state = PARSE_TCP_PACKET2 then
 				rx_tcp_source_port(15 downto 8) <= rx_packet_rd_data; 
@@ -2575,7 +2589,7 @@ begin
 							arp_source_ip_addr(23 downto 16) 			when "001"&X"3",
 							arp_source_ip_addr(31 downto 24) 			when "001"&X"4",
 							ip_identification(7 downto 0)					when "001"&X"5",
-							ip_identification(15 downto 8)				when "001"&X"6",
+							ip_identification(15 downto 8)					when "001"&X"6",
 							X"00"													when "001"&X"7", -- set rx read lower byte
 							X"00"													when "001"&X"8", -- set rx read upper byte
 							rx_packet_rd_data2								when "001"&X"9",
